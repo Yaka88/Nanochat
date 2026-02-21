@@ -1,0 +1,132 @@
+import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { z } from 'zod';
+import { registerUser, verifyEmail, loginWithEmail, loginWithId, getUserById } from '../services/auth.js';
+import { verifyToken } from '../middleware/auth.js';
+
+const registerSchema = z.object({
+    email: z.string().email(),
+    password: z.string().min(6),
+    nickname: z.string().min(1).max(50),
+    avatarUrl: z.string().url().optional(),
+});
+
+const loginSchema = z.object({
+    email: z.string().email(),
+    password: z.string().min(1),
+});
+
+const loginByIdSchema = z.object({
+    userId: z.string().uuid(),
+    deviceId: z.string().min(1),
+});
+
+export async function authRoutes(fastify: FastifyInstance) {
+    // POST /api/auth/register
+    fastify.post('/register', async (request: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const body = registerSchema.parse(request.body);
+            const user = await registerUser(body);
+
+            reply.code(201).send({
+                success: true,
+                message: 'Registration successful. Please check your email to verify your account.',
+                user,
+            });
+        } catch (error: any) {
+            if (error.name === 'ZodError') {
+                reply.code(400).send({ error: 'Validation error', details: error.errors });
+            } else {
+                reply.code(400).send({ error: error.message });
+            }
+        }
+    });
+
+    // GET /api/auth/verify-email
+    fastify.get('/verify-email', async (request: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const { token } = request.query as { token: string };
+            if (!token) {
+                reply.code(400).send({ error: 'Token is required' });
+                return;
+            }
+
+            await verifyEmail(token);
+
+            // Redirect to success page or return JSON
+            reply.type('text/html').send(`
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"><title>邮箱验证成功</title></head>
+        <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+          <h1 style="color: #22c55e;">✅ 邮箱验证成功</h1>
+          <p>您现在可以关闭此页面，返回 App 登录。</p>
+        </body>
+        </html>
+      `);
+        } catch (error: any) {
+            reply.code(400).send({ error: error.message });
+        }
+    });
+
+    // POST /api/auth/login
+    fastify.post('/login', async (request: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const body = loginSchema.parse(request.body);
+            const user = await loginWithEmail(body);
+
+            const token = fastify.jwt.sign({
+                id: user.id,
+                email: user.email,
+                isRegistered: user.isRegistered,
+            });
+
+            reply.send({
+                success: true,
+                token,
+                user,
+            });
+        } catch (error: any) {
+            if (error.name === 'ZodError') {
+                reply.code(400).send({ error: 'Validation error', details: error.errors });
+            } else {
+                reply.code(401).send({ error: error.message });
+            }
+        }
+    });
+
+    // POST /api/auth/login-by-id
+    fastify.post('/login-by-id', async (request: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const body = loginByIdSchema.parse(request.body);
+            const user = await loginWithId(body.userId, body.deviceId);
+
+            const token = fastify.jwt.sign({
+                id: user.id,
+                email: user.email,
+                isRegistered: user.isRegistered,
+            });
+
+            reply.send({
+                success: true,
+                token,
+                user,
+            });
+        } catch (error: any) {
+            if (error.name === 'ZodError') {
+                reply.code(400).send({ error: 'Validation error', details: error.errors });
+            } else {
+                reply.code(401).send({ error: error.message });
+            }
+        }
+    });
+
+    // GET /api/auth/me
+    fastify.get('/me', { preHandler: [verifyToken] }, async (request: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const user = await getUserById(request.user.id);
+            reply.send({ success: true, user });
+        } catch (error: any) {
+            reply.code(404).send({ error: error.message });
+        }
+    });
+}

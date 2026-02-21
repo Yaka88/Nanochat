@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nanochat 管理后台</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+        }
+        .login-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .login-box {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        .login-box h1 {
+            color: #2563eb;
+            margin-bottom: 24px;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            color: #374151;
+            font-weight: 500;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+        }
+        .btn {
+            width: 100%;
+            padding: 12px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 8px;
+        }
+        .btn:hover {
+            background: #1d4ed8;
+        }
+        .error {
+            color: #dc2626;
+            text-align: center;
+            margin-top: 16px;
+            display: none;
+        }
+        /* Dashboard */
+        .dashboard {
+            display: none;
+        }
+        .header {
+            background: #2563eb;
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            font-size: 20px;
+        }
+        .header button {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .content {
+            padding: 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .stat-card .label {
+            color: #6b7280;
+            font-size: 14px;
+        }
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #111827;
+            margin-top: 4px;
+        }
+        .section {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            margin-bottom: 24px;
+        }
+        .section-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .section-header h2 {
+            font-size: 18px;
+            color: #111827;
+        }
+        .section-content {
+            padding: 24px;
+        }
+        .config-item {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .config-item label {
+            flex: 1;
+            color: #374151;
+        }
+        .config-item input {
+            width: 100px;
+            padding: 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+        }
+        .config-item button {
+            padding: 8px 16px;
+            background: #10b981;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        th {
+            color: #6b7280;
+            font-weight: 500;
+        }
+        .status-online {
+            color: #10b981;
+        }
+        .status-offline {
+            color: #6b7280;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .badge-host {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+        .badge-member {
+            background: #f3f4f6;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <!-- Login Form -->
+    <div class="login-container" id="loginContainer">
+        <div class="login-box">
+            <h1>🏠 Nanochat 管理后台</h1>
+            <form id="loginForm">
+                <div class="form-group">
+                    <label>用户名</label>
+                    <input type="text" id="username" required value="admin">
+                </div>
+                <div class="form-group">
+                    <label>密码</label>
+                    <input type="password" id="password" required>
+                </div>
+                <button type="submit" class="btn">登录</button>
+            </form>
+            <p class="error" id="loginError">登录失败，请检查用户名和密码</p>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div class="dashboard" id="dashboard">
+        <div class="header">
+            <h1>🏠 Nanochat 管理后台</h1>
+            <button onclick="logout()">登出</button>
+        </div>
+        <div class="content">
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card">
+                    <div class="label">总用户数</div>
+                    <div class="value" id="statUsers">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">家庭总数</div>
+                    <div class="value" id="statGroups">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">在线用户</div>
+                    <div class="value" id="statOnline">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">语音消息</div>
+                    <div class="value" id="statMessages">-</div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header">
+                    <h2>⚙️ 系统配置</h2>
+                </div>
+                <div class="section-content" id="configSection">
+                    <!-- Config items will be inserted here -->
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header">
+                    <h2>👥 用户管理</h2>
+                </div>
+                <div class="section-content">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>昵称</th>
+                                <th>类型</th>
+                                <th>邮箱</th>
+                                <th>家庭数</th>
+                                <th>状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTable">
+                            <!-- Users will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/admin/api';
+        let token = localStorage.getItem('adminToken');
+
+        // Check if already logged in
+        if (token) {
+            showDashboard();
+        }
+
+        // Login form
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const res = await fetch(`${API_BASE}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password }),
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    token = data.token;
+                    localStorage.setItem('adminToken', token);
+                    showDashboard();
+                } else {
+                    document.getElementById('loginError').style.display = 'block';
+                }
+            } catch (err) {
+                document.getElementById('loginError').style.display = 'block';
+            }
+        });
+
+        function logout() {
+            token = null;
+            localStorage.removeItem('adminToken');
+            document.getElementById('loginContainer').style.display = 'flex';
+            document.getElementById('dashboard').style.display = 'none';
+        }
+
+        async function showDashboard() {
+            document.getElementById('loginContainer').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+            
+            // Load stats
+            try {
+                const statsRes = await fetch(`${API_BASE}/stats`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+                const statsData = await statsRes.json();
+                if (statsData.success) {
+                    document.getElementById('statUsers').textContent = statsData.stats.totalUsers;
+                    document.getElementById('statGroups').textContent = statsData.stats.totalGroups;
+                    document.getElementById('statOnline').textContent = statsData.stats.onlineUsers;
+                    document.getElementById('statMessages').textContent = statsData.stats.totalMessages;
+                }
+            } catch (err) {
+                console.error('Failed to load stats:', err);
+            }
+
+            // Load config
+            try {
+                const configRes = await fetch(`${API_BASE}/config`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+                const configData = await configRes.json();
+                if (configData.success) {
+                    const configSection = document.getElementById('configSection');
+                    configSection.innerHTML = '';
+                    for (const [key, cfg] of Object.entries(configData.config)) {
+                        configSection.innerHTML += `
+                            <div class="config-item">
+                                <label>${cfg.description} (${key})</label>
+                                <input type="text" id="config-${key}" value="${cfg.value}">
+                                <button onclick="saveConfig('${key}')">保存</button>
+                            </div>
+                        `;
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to load config:', err);
+            }
+
+            // Load users
+            try {
+                const usersRes = await fetch(`${API_BASE}/users`, {
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+                const usersData = await usersRes.json();
+                if (usersData.success) {
+                    const tbody = document.getElementById('usersTable');
+                    tbody.innerHTML = usersData.users.map(u => `
+                        <tr>
+                            <td>${u.nickname}</td>
+                            <td><span class="badge ${u.isRegistered ? 'badge-host' : 'badge-member'}">${u.isRegistered ? 'Host' : 'Member'}</span></td>
+                            <td>${u.email || '-'}</td>
+                            <td>${u.groupCount}</td>
+                            <td class="${u.isOnline ? 'status-online' : 'status-offline'}">${u.isOnline ? '● 在线' : '○ 离线'}</td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (err) {
+                console.error('Failed to load users:', err);
+            }
+        }
+
+        async function saveConfig(key) {
+            const value = document.getElementById(`config-${key}`).value;
+            try {
+                const res = await fetch(`${API_BASE}/config`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ [key]: value }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert('保存成功');
+                }
+            } catch (err) {
+                alert('保存失败');
+            }
+        }
+    </script>
+</body>
+</html>

@@ -5,6 +5,4 @@ frontend需要email注册验证后使用(1期)，手机本机号码验证(2期).
 backend需要登陆验证和email验证,消息处理。
 视频和语音通话点对点实现，最好不要通过服务器。如果对方不在线，语音短信，文本短信(2期)可暂时保留在服务器。
 服务器有一台ubuntu 24.04的azure VPS。公网IP,  开发环境google 的antigravity 工具。可用模型有claude opus，claude sonnet,gemini 3pro,gemini 3 flash , GPT-oos. 有github账号，可以使用github action的mac runner来编译ios程序。我目前开发环境本机也是ubuntu 24.04.
-你给我分析一下规划一下。包括怎么开发，什么语言，怎么部署。本机还需要我安装工具，服务器还需要安装什么？
-我是需要LLM agent来实现的，不是人工编码。目前你只需要规划，不需要写代码，目前不需要考虑2期。绝对不需要写代码，目前只做分析规划。
 家庭成员构成规划，每个家庭是一个group,注册者是这个group的Host，注册成功会有email,password。 host可以创建group,会有 group_id,group_name. group_id是一个UUID，group_name自己定义或者缺省为Home。host通过二维码邀请其他成员加入，二维码就是group_id的相关信息，每个成员分配一个member_id.Host通过email,password登录. 其他家庭成员通过group_id 和 member_id登录(无需email和密码)。一个家庭最多membercount个，缺省6个。一个账号最多可以加入或者创建groupcount个家庭. groupcount缺省6个。 groupcount和membercount可以在后端设置.每个账号有一个缺省group,直接登陆到家庭成员界面。对于多家庭group的账号登陆后可以切换group. 首次登陆界面是扫码和注册两部分。如果有家庭group,就直接登陆。家庭界面上到下排序家庭成员，一页最多排6个。每一行从左到右是头像，姓名+是否在线，视频通话，语音通话，语音短信，都用图表按钮显示。不在线的话视频通话，语音通话按钮无法发起。

@@ -1,0 +1,95 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(uuid()) @db.Uuid
+  email           String?   @unique
+  passwordHash    String?   @map("password_hash")
+  emailVerified   Boolean   @default(false) @map("email_verified")
+  verifyToken     String?   @map("verify_token")
+  nickname        String
+  avatarUrl       String?   @map("avatar_url")
+  isRegistered    Boolean   @default(false) @map("is_registered")
+  lastGroupId     String?   @map("last_group_id") @db.Uuid
+  isOnline        Boolean   @default(false) @map("is_online")
+  isDisabled      Boolean   @default(false) @map("is_disabled")
+  deviceToken     String?   @map("device_token")
+  deviceId        String?   @map("device_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  lastOnlineAt    DateTime? @map("last_online_at")
+
+  createdGroups    Group[]        @relation("GroupCreator")
+  memberships      GroupMember[]
+  sentMessages     VoiceMessage[] @relation("MessageSender")
+  receivedMessages VoiceMessage[] @relation("MessageReceiver")
+
+  @@map("users")
+}
+
+model Group {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String   @default("Home")
+  creatorId  String   @db.Uuid @map("creator_id")
+  inviteCode String   @unique @map("invite_code")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  creator       User           @relation("GroupCreator", fields: [creatorId], references: [id])
+  members       GroupMember[]
+  voiceMessages VoiceMessage[]
+
+  @@map("groups")
+}
+
+model GroupMember {
+  id          String   @id @default(uuid()) @db.Uuid
+  groupId     String   @db.Uuid @map("group_id")
+  userId      String   @db.Uuid @map("user_id")
+  nameInGroup String   @map("name_in_group")
+  joinedAt    DateTime @default(now()) @map("joined_at")
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@map("group_members")
+}
+
+model VoiceMessage {
+  id              String   @id @default(uuid()) @db.Uuid
+  groupId         String   @db.Uuid @map("group_id")
+  senderId        String   @db.Uuid @map("sender_id")
+  receiverId      String   @db.Uuid @map("receiver_id")
+  audioUrl        String   @map("audio_url")
+  durationSeconds Int      @map("duration_seconds")
+  isRead          Boolean  @default(false) @map("is_read")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  group    Group @relation(fields: [groupId], references: [id])
+  sender   User  @relation("MessageSender", fields: [senderId], references: [id])
+  receiver User  @relation("MessageReceiver", fields: [receiverId], references: [id])
+
+  @@map("voice_messages")
+}
+
+model SystemConfig {
+  key         String  @id
+  value       String
+  description String?
+
+  @@map("system_config")
+}
+
+model Admin {
+  id           String   @id @default(uuid()) @db.Uuid
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("admins")
+}

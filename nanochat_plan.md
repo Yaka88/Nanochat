@@ -1,6 +1,6 @@
 # Nanochat 第一期 - 完整规划文档
 
-> 最后更新：2026-01-23
+> 最后更新：2026-01-28
 
 ---
 
@@ -13,7 +13,7 @@
 | **核心特点** | 简洁易用、P2P通话、家庭群组 |
 | **一期功能** | 视频通话、语音通话、语音短信、家庭群组管理、管理后台 |
 | **支持语言** | 中文、英文（跟随系统语言） |
-| **支持平台** | Android (API 24+)、iOS (13.0+) |
+| **支持平台** | Android (API 24+)、iOS (13+) |
 
 ---
 
@@ -327,18 +327,27 @@ INSERT INTO system_config (key, value, description) VALUES
 | **实时通信** | WebSocket (socket.io) | 在线状态 + 信令 |
 | **通话** | WebRTC (flutter_webrtc) | P2P 视频/语音 |
 | **STUN** | 自建 coturn | 国内可用 |
-| **容器** | Docker Compose | 一键部署 |
-| **反向代理** | Nginx | HTTPS + WebSocket |
-| **邮件服务** | Resend | 发送验证邮件 |
+| **容器** | Docker Compose | 一键部署（不含 Nginx） |
+| **反向代理** | Nginx (系统级) | HTTPS + WebSocket，全局代理 |
+| **邮件服务** | Brevo | 发送验证邮件 |
 
 ---
 
 ## 🌐 服务器部署架构
 
+### 架构总览
+
+> **重要**: Nginx 作为系统级全局反向代理（不在 Docker 内），统一管理所有域名的 HTTPS 和路由。
+
 ### 双域名架构
 
 ```
                      VPS (同一台服务器)
+                           │
+            ┌──────────────┴──────────────┐
+            │      系统级 Nginx            │
+            │   /etc/nginx/sites-enabled/  │
+            └──────────────┬──────────────┘
                            │
        ┌───────────────────┴───────────────────┐
        │                                       │
@@ -349,10 +358,12 @@ INSERT INTO system_config (key, value, description) VALUES
  :443      :8443                         :443      :80
 (Nginx)   (VLESS)                       (Nginx)  (→443)
   │       直连                             │
-  ├─/admin/* → :8080 (3x-ui面板)          └─/* → :3000 (Nanochat)
+  ├─/admin/* → :8080 (3x-ui面板)          └─/* → :3000 (Nanochat Docker)
   └─/sub → :25500 (SubConverter)              ├─/api/* → API
+                                              ├─/socket.io/* → WebSocket
+                                              ├─/uploads/* → 静态资源
                                               └─/admin/* → 管理后台
-+ :3478/udp → coturn (STUN)
++ :3478/udp → coturn (STUN, Docker)
 ```
 
 ### 域名与端口分配
@@ -371,18 +382,63 @@ INSERT INTO system_config (key, value, description) VALUES
 - **申请方式**: acme.sh + ZoneEdit DNS 验证
 - **路径**: `/etc/ssl/bluelaser.cn.crt` 和 `.key`
 
-### Docker Compose 服务
+### Nginx 配置（系统级）
+
+> **配置文件统一管理在项目 `nginx/` 目录，通过软链接安装到系统 Nginx。**
+
+| 配置文件 | 用途 |
+|----------|------|
+| `vps.bluelaser.cn.conf` | 3x-ui 面板 + SubConverter |
+| `chat.bluelaser.cn.conf` | Nanochat API + WebSocket + 管理后台 |
+
+```bash
+# 配置文件位置
+/home/yaka/Documents/Nanochat/nginx/
+├── vps.bluelaser.cn.conf    # 3x-ui 面板、SubConverter
+└── chat.bluelaser.cn.conf   # Nanochat 服务
+
+# 安装方式：创建软链接到 sites-enabled
+sudo ln -sf /home/yaka/Documents/Nanochat/nginx/*.conf /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+#### vps.bluelaser.cn 路由规则
+
+| 路径 | 目标服务 | 端口 |
+|------|----------|------|
+| `/admin`, `/admin/*` | 3x-ui 面板 | 8080 |
+| `/sub`, `/convert`, ... | SubConverter | 25500 |
+| `8443 (直连)` | VLESS 代理 | 8443 (不经过 Nginx) |
+
+#### chat.bluelaser.cn 路由规则
+
+| 路径 | 目标服务 | 说明 |
+|------|----------|------|
+| `/api/*` | Node.js 后端 | REST API |
+| `/socket.io/*` | Node.js 后端 | WebSocket (在线状态 + 信令) |
+| `/admin/*` | Node.js 后端 | 管理后台 |
+| `/uploads/*` | Node.js 后端 | 静态资源 (头像、语音消息) |
+
+### Docker Compose 服务（不含 Nginx）
 
 ```
 nanochat/
 ├── docker-compose.yml
-├── nginx/
-│   └── conf.d/
-│       └── chat.bluelaser.cn.conf
-├── api/                    # Node.js 后端
-├── postgres/               # 数据库
-└── coturn/                 # STUN 服务器
+├── nginx/                        # Nginx 配置（仅配置文件，系统级 Nginx 使用）
+│   ├── vps.bluelaser.cn.conf     # 3x-ui + SubConverter
+│   └── chat.bluelaser.cn.conf    # Nanochat
+├── api/                          # Node.js 后端 (端口 3000)
+├── postgres/                     # 数据库 (端口 5432, 仅内部访问)
+└── coturn/                       # STUN 服务器 (端口 3478/udp)
 ```
+
+### Docker 服务端口
+
+| 服务 | 容器内端口 | 宿主机端口 | 访问方式 |
+|------|-----------|-----------|----------|
+| api (Node.js) | 3000 | 3000 | 通过 Nginx 代理 |
+| postgres | 5432 | - | 仅容器内部访问 |
+| coturn | 3478/udp | 3478/udp | 直接暴露 |
 
 ---
 
@@ -569,11 +625,11 @@ nanochat/
 │   ├── Dockerfile
 │   └── package.json
 │
+├── nginx/                       # 系统级 Nginx 配置
+│   └── chat.bluelaser.cn.conf   # 软链接到 /etc/nginx/sites-enabled/
+│
 ├── docker/
-│   ├── docker-compose.yml
-│   ├── nginx/
-│   │   └── conf.d/
-│   │       └── chat.bluelaser.cn.conf
+│   ├── docker-compose.yml       # 不含 Nginx
 │   └── coturn/
 │       └── turnserver.conf
 │
@@ -598,7 +654,7 @@ nanochat/
 | 泛域名证书 | ✅ | `*.bluelaser.cn` (已申请) |
 | Nanochat 端口 | ✅ | 443 (标准 HTTPS) |
 | STUN 端口 | ✅ | 3478/udp |
-| 邮件服务 | ✅ | Resend |
+| 邮件服务 | ✅ | Brevo |
 | 开发模式 | ✅ | 本地 Flutter + GitHub Actions iOS |
 
 ---
@@ -616,5 +672,6 @@ nanochat/
 
 ---
 
-*文档版本: 1.0*
-*最后更新: 2026-01-23*
+*文档版本: 1.1*
+*最后更新: 2026-01-28*
+*变更记录: v1.1 - Nginx 改为系统级全局代理（不在 Docker 内）*

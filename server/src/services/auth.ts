@@ -1,0 +1,160 @@
+import bcrypt from 'bcryptjs';
+import { v4 as uuidv4 } from 'uuid';
+import { prisma } from '../db.js';
+import { sendVerificationEmail } from './email.js';
+
+interface RegisterInput {
+    email: string;
+    password: string;
+    nickname: string;
+    avatarUrl?: string;
+}
+
+interface LoginInput {
+    email: string;
+    password: string;
+}
+
+export async function registerUser(input: RegisterInput) {
+    const { email, password, nickname, avatarUrl } = input;
+
+    // Check if email already exists
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+        throw new Error('Email already registered');
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Generate verification token
+    const verifyToken = uuidv4();
+
+    // Create user
+    const user = await prisma.user.create({
+        data: {
+            email,
+            passwordHash,
+            nickname,
+            avatarUrl,
+            isRegistered: true,
+            emailVerified: false,
+            verifyToken,
+        },
+    });
+
+    // Send verification email
+    await sendVerificationEmail(email, verifyToken);
+
+    return {
+        id: user.id,
+        email: user.email,
+        nickname: user.nickname,
+        emailVerified: user.emailVerified,
+    };
+}
+
+export async function verifyEmail(token: string) {
+    const user = await prisma.user.findFirst({ where: { verifyToken: token } });
+    if (!user) {
+        throw new Error('Invalid verification token');
+    }
+
+    await prisma.user.update({
+        where: { id: user.id },
+        data: { emailVerified: true, verifyToken: null },
+    });
+
+    return { success: true };
+}
+
+export async function loginWithEmail(input: LoginInput) {
+    const { email, password } = input;
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user || !user.passwordHash) {
+        throw new Error('Invalid email or password');
+    }
+
+    if (user.isDisabled) {
+        throw new Error('Account is disabled');
+    }
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) {
+        throw new Error('Invalid email or password');
+    }
+
+    if (!user.emailVerified) {
+        throw new Error('Email not verified');
+    }
+
+    return {
+        id: user.id,
+        email: user.email,
+        nickname: user.nickname,
+        avatarUrl: user.avatarUrl,
+        isRegistered: user.isRegistered,
+        lastGroupId: user.lastGroupId,
+    };
+}
+
+export async function loginWithId(userId: string, deviceId: string) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+        throw new Error('User not found');
+    }
+
+    if (user.isDisabled) {
+        throw new Error('Account is disabled');
+    }
+
+    // Device binding verification: Member users must use the same device
+    if (!user.deviceId) {
+        throw new Error('No device bound to this account');
+    }
+
+    if (user.deviceId !== deviceId) {
+        throw new Error('Device not authorized for this account');
+    }
+
+    return {
+        id: user.id,
+        email: user.email,
+        nickname: user.nickname,
+        avatarUrl: user.avatarUrl,
+        isRegistered: user.isRegistered,
+        lastGroupId: user.lastGroupId,
+    };
+}
+
+export async function getUserById(userId: string) {
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+            memberships: {
+                include: {
+                    group: true,
+                },
+            },
+        },
+    });
+
+    if (!user) {
+        throw new Error('User not found');
+    }
+
+    return {
+        id: user.id,
+        email: user.email,
+        nickname: user.nickname,
+        avatarUrl: user.avatarUrl,
+        isRegistered: user.isRegistered,
+        lastGroupId: user.lastGroupId,
+        groups: user.memberships.map(m => ({
+            id: m.group.id,
+            name: m.group.name,
+            nameInGroup: m.nameInGroup,
+        })),
+    };
+}
