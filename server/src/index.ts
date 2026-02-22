@@ -49,8 +49,9 @@ await fastify.register(fastifyStatic, {
 // Serve admin panel static files
 await fastify.register(fastifyStatic, {
     root: path.join(__dirname, '..', 'public', 'admin'),
-    prefix: '/admin/',
+    prefix: '/admin',
     decorateReply: false,
+    index: 'index.html',
 });
 
 // Health check
