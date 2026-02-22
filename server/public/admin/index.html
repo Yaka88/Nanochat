@@ -287,6 +287,31 @@
         const API_BASE = '/admin/api';
         let token = localStorage.getItem('adminToken');
 
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        async function apiFetch(path, options = {}) {
+            const res = await fetch(`${API_BASE}${path}`, {
+                ...options,
+                headers: {
+                    ...options.headers,
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+            if (res.status === 401) {
+                logout();
+                throw new Error('会话已过期，请重新登录');
+            }
+            return res;
+        }
+
         // Check if already logged in
         if (token) {
             showDashboard();
@@ -331,9 +356,7 @@
             
             // Load stats
             try {
-                const statsRes = await fetch(`${API_BASE}/stats`, {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
+                const statsRes = await apiFetch('/stats');
                 const statsData = await statsRes.json();
                 if (statsData.success) {
                     document.getElementById('statUsers').textContent = statsData.stats.totalUsers;
@@ -347,9 +370,7 @@
 
             // Load config
             try {
-                const configRes = await fetch(`${API_BASE}/config`, {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
+                const configRes = await apiFetch('/config');
                 const configData = await configRes.json();
                 if (configData.success) {
                     const configSection = document.getElementById('configSection');
@@ -357,9 +378,9 @@
                     for (const [key, cfg] of Object.entries(configData.config)) {
                         configSection.innerHTML += `
                             <div class="config-item">
-                                <label>${cfg.description} (${key})</label>
-                                <input type="text" id="config-${key}" value="${cfg.value}">
-                                <button onclick="saveConfig('${key}')">保存</button>
+                                <label>${escapeHtml(cfg.description)} (${escapeHtml(key)})</label>
+                                <input type="text" id="config-${escapeHtml(key)}" value="${escapeHtml(cfg.value)}">
+                                <button onclick="saveConfig('${escapeHtml(key)}')">保存</button>
                             </div>
                         `;
                     }
@@ -370,17 +391,15 @@
 
             // Load users
             try {
-                const usersRes = await fetch(`${API_BASE}/users`, {
-                    headers: { 'Authorization': `Bearer ${token}` },
-                });
+                const usersRes = await apiFetch('/users');
                 const usersData = await usersRes.json();
                 if (usersData.success) {
                     const tbody = document.getElementById('usersTable');
                     tbody.innerHTML = usersData.users.map(u => `
                         <tr>
-                            <td>${u.nickname}</td>
+                            <td>${escapeHtml(u.nickname)}</td>
                             <td><span class="badge ${u.isRegistered ? 'badge-host' : 'badge-member'}">${u.isRegistered ? 'Host' : 'Member'}</span></td>
-                            <td>${u.email || '-'}</td>
+                            <td>${escapeHtml(u.email || '-')}</td>
                             <td>${u.groupCount}</td>
                             <td class="${u.isOnline ? 'status-online' : 'status-offline'}">${u.isOnline ? '● 在线' : '○ 离线'}</td>
                         </tr>
@@ -394,11 +413,10 @@
         async function saveConfig(key) {
             const value = document.getElementById(`config-${key}`).value;
             try {
-                const res = await fetch(`${API_BASE}/config`, {
+                const res = await apiFetch('/config', {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`,
                     },
                     body: JSON.stringify({ [key]: value }),
                 });

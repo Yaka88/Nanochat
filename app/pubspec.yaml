@@ -1,0 +1,53 @@
+name: nanochat
+description: Nanochat App - Elderly friendly video and voice chat application
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # State management and DI
+  provider: ^6.1.1
+  
+  # Networking
+  dio: ^5.4.0
+  socket_io_client: ^2.0.3+1
+  
+  # Local storage
+  shared_preferences: ^2.2.2
+  
+  # WebRTC
+  flutter_webrtc: ^0.9.48
+  
+  # Utilities
+  uuid: ^4.3.3
+  intl: ^0.19.0
+  http_parser: ^4.1.2
+  record: ^5.2.1
+  path_provider: ^2.1.5
+  mobile_scanner: ^5.2.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+  flutter_launcher_name: ^0.0.1
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_name:
+  name: "NanoChat"
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon/app_icon.png" # 请在此放入“家”字的图片
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon/

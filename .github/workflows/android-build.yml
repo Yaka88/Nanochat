@@ -1,0 +1,58 @@
+name: Android Build & Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ./app
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Initialize App Skeleton (Cloud Bootstrap)
+        run: |
+          # Move user code out, create a clean skeleton, then restore code
+          mkdir -p ../temp_lib
+          cp -r lib/* ../temp_lib/
+          cp pubspec.yaml ../temp_pubspec.yaml
+          rm -rf *
+          flutter create --org cn.bluelaser.nanochat .
+          rm -rf lib/*
+          cp -r ../temp_lib/* lib/
+          cp ../temp_pubspec.yaml pubspec.yaml
+
+      - name: Flutter Pub Get
+        run: flutter pub get
+
+      - name: Build APK
+        run: flutter build apk --release
+
+      - name: Rename APK
+        run: mv build/app/outputs/flutter-apk/app-release.apk Nanochat.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: nanochat-release-apk
+          path: app/Nanochat.apk

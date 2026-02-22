@@ -59,6 +59,11 @@ fastify.get('/health', async () => {
     return { status: 'OK', version: '1.0.0', timestamp: new Date().toISOString() };
 });
 
+// Redirect /admin → /admin/ so the static plugin can serve index.html
+fastify.get('/admin', async (_request, reply) => {
+    return reply.redirect(301, '/admin/');
+});
+
 // Register routes
 await fastify.register(authRoutes, { prefix: '/api/auth' });
 await fastify.register(groupRoutes, { prefix: '/api/groups' });

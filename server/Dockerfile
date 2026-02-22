@@ -38,6 +38,9 @@ RUN echo '#!/bin/sh' > /app/entrypoint.sh && \
     echo 'echo "⏳ Syncing database schema..."' >> /app/entrypoint.sh && \
     echo 'npx prisma db push --skip-generate' >> /app/entrypoint.sh && \
     echo 'echo "✅ Database schema synced"' >> /app/entrypoint.sh && \
+    echo 'echo "🌱 Seeding database..."' >> /app/entrypoint.sh && \
+    echo 'npx tsx prisma/seed.ts' >> /app/entrypoint.sh && \
+    echo 'echo "✅ Database seeded"' >> /app/entrypoint.sh && \
     echo 'echo "🚀 Starting server..."' >> /app/entrypoint.sh && \
     echo 'exec node dist/index.js' >> /app/entrypoint.sh && \
     chmod +x /app/entrypoint.sh

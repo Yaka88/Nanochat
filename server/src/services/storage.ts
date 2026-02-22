@@ -22,7 +22,10 @@ export async function saveFile(buffer: Buffer, extension: string): Promise<strin
 }
 
 export async function deleteFile(url: string): Promise<void> {
-    const filename = url.replace('/uploads/', '');
+    const filename = path.basename(url);
+    if (!filename || filename.includes('..')) {
+        return;
+    }
     const filepath = path.join(UPLOADS_DIR, filename);
 
     try {

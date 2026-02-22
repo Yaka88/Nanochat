@@ -1,0 +1,54 @@
+name: iOS Build & Test
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    
+    defaults:
+      run:
+        working-directory: ./app
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Initialize App Skeleton (Cloud Bootstrap)
+        run: |
+          mkdir -p ../temp_lib
+          cp -r lib/* ../temp_lib/
+          cp pubspec.yaml ../temp_pubspec.yaml
+          rm -rf *
+          flutter create --org cn.bluelaser.nanochat .
+          rm -rf lib/*
+          cp -r ../temp_lib/* lib/
+          cp ../temp_pubspec.yaml pubspec.yaml
+
+      - name: Flutter Pub Get
+        run: flutter pub get
+
+      - name: Build iOS (No Sign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Create IPA for Sideloading
+        run: |
+          mkdir -p Payload
+          mv build/ios/iphoneos/Runner.app Payload/
+          zip -r Nanochat.ipa Payload
+          
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: nanochat-ios-ipa
+          path: app/Nanochat.ipa
