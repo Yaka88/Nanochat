@@ -25,6 +25,16 @@ COPY --from=builder /app/prisma ./prisma
 # Create uploads directory
 RUN mkdir -p uploads
 
+# Create entrypoint script that ensures DB schema is synced before starting
+RUN echo '#!/bin/sh' > /app/entrypoint.sh && \
+    echo 'set -e' >> /app/entrypoint.sh && \
+    echo 'echo "⏳ Syncing database schema..."' >> /app/entrypoint.sh && \
+    echo 'npx prisma db push --skip-generate' >> /app/entrypoint.sh && \
+    echo 'echo "✅ Database schema synced"' >> /app/entrypoint.sh && \
+    echo 'echo "🚀 Starting server..."' >> /app/entrypoint.sh && \
+    echo 'exec node dist/index.js' >> /app/entrypoint.sh && \
+    chmod +x /app/entrypoint.sh
+
 EXPOSE 3000
 
-CMD ["npm", "start"]
+CMD ["/app/entrypoint.sh"]
