@@ -35,12 +35,16 @@ jobs:
         run: |
           # Move user code out, create a clean skeleton, then restore code
           mkdir -p ../temp_lib
+          mkdir -p ../temp_assets
           cp -r lib/* ../temp_lib/
+          cp -r assets/* ../temp_assets/
           cp pubspec.yaml ../temp_pubspec.yaml
           rm -rf *
           flutter create --org cn.bluelaser.nanochat .
           rm -rf lib/*
+          rm -rf assets/*
           cp -r ../temp_lib/* lib/
+          cp -r ../temp_assets/* assets/
           cp ../temp_pubspec.yaml pubspec.yaml
 
       - name: Flutter Pub Get
