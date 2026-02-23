@@ -19,6 +19,10 @@ interface ConnectedUser {
 const connectedUsers = new Map<string, ConnectedUser>();
 
 export function setupWebSocket(io: Server) {
+    prisma.user.updateMany({ data: { isOnline: false } }).catch((error) => {
+        console.error('Failed to reset online status on startup:', error);
+    });
+
     // Authentication middleware
     io.use(async (socket, next) => {
         try {
@@ -188,6 +192,14 @@ export function setupWebSocket(io: Server) {
             }
         });
     });
+}
+
+export function getOnlineUserIds(): string[] {
+    return Array.from(connectedUsers.keys());
+}
+
+export function isUserOnline(userId: string): boolean {
+    return connectedUsers.has(userId);
 }
 
 // Helper function to notify user of new message

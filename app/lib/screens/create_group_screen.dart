@@ -24,7 +24,12 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
         Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
       }
     } catch (e) {
-      setState(() => _error = e.toString());
+      final message = e.toString();
+      if (message.toLowerCase().contains('verification')) {
+        setState(() => _error = '请先完成邮箱验证，再创建家庭');
+      } else {
+        setState(() => _error = message);
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }

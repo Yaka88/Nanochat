@@ -20,6 +20,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   String? _error;
 
   Future<void> _register() async {
+    final t = (String k) => AppL10n.t(context, k);
     if (_emailCtrl.text.isEmpty ||
         _passCtrl.text.isEmpty ||
         _nickCtrl.text.isEmpty) return;
@@ -35,9 +36,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
             nickname: _nickCtrl.text.trim(),
           );
       if (mounted) {
-        // Go to create first group
-        Navigator.pushNamedAndRemoveUntil(
-            context, '/create-group', (_) => false);
+        await showDialog<void>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(t('email_register')),
+            content: const Text('请查收验证邮件', style: TextStyle(fontSize: 18)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(t('confirm'), style: const TextStyle(fontSize: 18)),
+              ),
+            ],
+          ),
+        );
+        Navigator.pushNamedAndRemoveUntil(context, '/create-group', (_) => false);
       }
     } catch (e) {
       setState(() => _error = e.toString());

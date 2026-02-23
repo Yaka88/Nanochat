@@ -3,6 +3,7 @@ import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../db.js';
 import { config } from '../config.js';
+import { getOnlineUserIds, isUserOnline } from '../websocket/handler.js';
 
 // Admin auth middleware
 async function verifyAdmin(request: FastifyRequest, reply: FastifyReply) {
@@ -61,15 +62,15 @@ export async function adminRoutes(fastify: FastifyInstance) {
                 memberUserCount,
                 groupCount,
                 messageCount,
-                onlineCount,
             ] = await Promise.all([
                 prisma.user.count(),
                 prisma.user.count({ where: { isRegistered: true } }),
                 prisma.user.count({ where: { isRegistered: false } }),
                 prisma.group.count(),
                 prisma.voiceMessage.count(),
-                prisma.user.count({ where: { isOnline: true } }),
             ]);
+
+            const onlineCount = getOnlineUserIds().length;
 
             // Today's stats
             const today = new Date();
@@ -154,7 +155,6 @@ export async function adminRoutes(fastify: FastifyInstance) {
                         nickname: true,
                         avatarUrl: true,
                         isRegistered: true,
-                        isOnline: true,
                         isDisabled: true,
                         createdAt: true,
                         lastOnlineAt: true,
@@ -173,6 +173,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
                 success: true,
                 users: users.map(u => ({
                     ...u,
+                    isOnline: isUserOnline(u.id),
                     groupCount: u._count.memberships,
                 })),
                 pagination: {
@@ -199,6 +200,52 @@ export async function adminRoutes(fastify: FastifyInstance) {
             await prisma.user.update({
                 where: { id },
                 data: body,
+            });
+
+            reply.send({ success: true });
+        } catch (error: any) {
+            reply.code(400).send({ error: error.message });
+        }
+    });
+
+    // DELETE /admin/api/users/:id
+    fastify.delete('/users/:id', { preHandler: [verifyAdmin] }, async (request: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const { id } = request.params as { id: string };
+
+            const user = await prisma.user.findUnique({ where: { id } });
+            if (!user) {
+                reply.code(404).send({ error: 'User not found' });
+                return;
+            }
+
+            await prisma.$transaction(async (tx) => {
+                const createdGroups = await tx.group.findMany({
+                    where: { creatorId: id },
+                    select: { id: true },
+                });
+                const createdGroupIds = createdGroups.map(g => g.id);
+
+                if (createdGroupIds.length > 0) {
+                    await tx.voiceMessage.deleteMany({
+                        where: { groupId: { in: createdGroupIds } },
+                    });
+                    await tx.groupMember.deleteMany({
+                        where: { groupId: { in: createdGroupIds } },
+                    });
+                    await tx.group.deleteMany({
+                        where: { id: { in: createdGroupIds } },
+                    });
+                }
+
+                await tx.voiceMessage.deleteMany({
+                    where: {
+                        OR: [{ senderId: id }, { receiverId: id }],
+                    },
+                });
+
+                await tx.groupMember.deleteMany({ where: { userId: id } });
+                await tx.user.delete({ where: { id } });
             });
 
             reply.send({ success: true });
@@ -248,6 +295,29 @@ export async function adminRoutes(fastify: FastifyInstance) {
             });
         } catch (error: any) {
             reply.code(500).send({ error: error.message });
+        }
+    });
+
+    // DELETE /admin/api/groups/:id
+    fastify.delete('/groups/:id', { preHandler: [verifyAdmin] }, async (request: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const { id } = request.params as { id: string };
+
+            const group = await prisma.group.findUnique({ where: { id } });
+            if (!group) {
+                reply.code(404).send({ error: 'Group not found' });
+                return;
+            }
+
+            await prisma.$transaction(async (tx) => {
+                await tx.voiceMessage.deleteMany({ where: { groupId: id } });
+                await tx.groupMember.deleteMany({ where: { groupId: id } });
+                await tx.group.delete({ where: { id } });
+            });
+
+            reply.send({ success: true });
+        } catch (error: any) {
+            reply.code(400).send({ error: error.message });
         }
     });
 }

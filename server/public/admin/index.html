@@ -202,6 +202,19 @@
             background: #f3f4f6;
             color: #6b7280;
         }
+        .btn-small {
+            width: auto;
+            margin-top: 0;
+            padding: 6px 10px;
+            font-size: 13px;
+            border-radius: 6px;
+        }
+        .btn-danger {
+            background: #dc2626;
+        }
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
     </style>
 </head>
 <body>
@@ -272,10 +285,33 @@
                                 <th>邮箱</th>
                                 <th>家庭数</th>
                                 <th>状态</th>
+                                <th>操作</th>
                             </tr>
                         </thead>
                         <tbody id="usersTable">
                             <!-- Users will be inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-header">
+                    <h2>🏠 家庭管理</h2>
+                </div>
+                <div class="section-content">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>家庭名称</th>
+                                <th>创建者</th>
+                                <th>成员数</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groupsTable">
+                            <!-- Groups will be inserted here -->
                         </tbody>
                     </table>
                 </div>
@@ -350,6 +386,49 @@
             document.getElementById('dashboard').style.display = 'none';
         }
 
+        async function loadUsers() {
+            try {
+                const usersRes = await apiFetch('/users');
+                const usersData = await usersRes.json();
+                if (usersData.success) {
+                    const tbody = document.getElementById('usersTable');
+                    tbody.innerHTML = usersData.users.map(u => `
+                        <tr>
+                            <td>${escapeHtml(u.nickname)}</td>
+                            <td><span class="badge ${u.isRegistered ? 'badge-host' : 'badge-member'}">${u.isRegistered ? 'Host' : 'Member'}</span></td>
+                            <td>${escapeHtml(u.email || '-')}</td>
+                            <td>${u.groupCount}</td>
+                            <td class="${u.isOnline ? 'status-online' : 'status-offline'}">${u.isOnline ? '● 在线' : '○ 离线'}</td>
+                            <td><button class="btn btn-small btn-danger" onclick="deleteUser('${escapeHtml(u.id)}','${escapeHtml(u.nickname)}')">删除</button></td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (err) {
+                console.error('Failed to load users:', err);
+            }
+        }
+
+        async function loadGroups() {
+            try {
+                const groupsRes = await apiFetch('/groups');
+                const groupsData = await groupsRes.json();
+                if (groupsData.success) {
+                    const tbody = document.getElementById('groupsTable');
+                    tbody.innerHTML = groupsData.groups.map(g => `
+                        <tr>
+                            <td>${escapeHtml(g.name)}</td>
+                            <td>${escapeHtml(g.creator?.nickname || '-')}</td>
+                            <td>${g.memberCount}</td>
+                            <td>${new Date(g.createdAt).toLocaleString()}</td>
+                            <td><button class="btn btn-small btn-danger" onclick="deleteGroup('${escapeHtml(g.id)}','${escapeHtml(g.name)}')">删除</button></td>
+                        </tr>
+                    `).join('');
+                }
+            } catch (err) {
+                console.error('Failed to load groups:', err);
+            }
+        }
+
         async function showDashboard() {
             document.getElementById('loginContainer').style.display = 'none';
             document.getElementById('dashboard').style.display = 'block';
@@ -389,24 +468,39 @@
                 console.error('Failed to load config:', err);
             }
 
-            // Load users
+            await loadUsers();
+            await loadGroups();
+        }
+
+        async function deleteUser(userId, nickname) {
+            if (!confirm(`确认删除用户「${nickname}」？该用户相关数据将被清理。`)) return;
             try {
-                const usersRes = await apiFetch('/users');
-                const usersData = await usersRes.json();
-                if (usersData.success) {
-                    const tbody = document.getElementById('usersTable');
-                    tbody.innerHTML = usersData.users.map(u => `
-                        <tr>
-                            <td>${escapeHtml(u.nickname)}</td>
-                            <td><span class="badge ${u.isRegistered ? 'badge-host' : 'badge-member'}">${u.isRegistered ? 'Host' : 'Member'}</span></td>
-                            <td>${escapeHtml(u.email || '-')}</td>
-                            <td>${u.groupCount}</td>
-                            <td class="${u.isOnline ? 'status-online' : 'status-offline'}">${u.isOnline ? '● 在线' : '○ 离线'}</td>
-                        </tr>
-                    `).join('');
+                const res = await apiFetch(`/users/${userId}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    alert('删除成功');
+                    await showDashboard();
+                } else {
+                    alert(data.error || '删除失败');
                 }
             } catch (err) {
-                console.error('Failed to load users:', err);
+                alert('删除失败');
+            }
+        }
+
+        async function deleteGroup(groupId, name) {
+            if (!confirm(`确认删除家庭「${name}」？`)) return;
+            try {
+                const res = await apiFetch(`/groups/${groupId}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (data.success) {
+                    alert('删除成功');
+                    await showDashboard();
+                } else {
+                    alert(data.error || '删除失败');
+                }
+            } catch (err) {
+                alert('删除失败');
             }
         }
 
