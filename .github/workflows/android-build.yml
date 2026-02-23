@@ -75,7 +75,25 @@ jobs:
             --tree-shake-icons
 
       - name: Rename APK
-        run: mv build/app/outputs/flutter-apk/app-arm64-v8a-release.apk Nanochat-arm64.apk
+        run: |
+          APK_DIR="build/app/outputs/flutter-apk"
+          ls -lah "$APK_DIR"
+          SOURCE_APK=""
+
+          if [ -f "$APK_DIR/app-arm64-v8a-release.apk" ]; then
+            SOURCE_APK="$APK_DIR/app-arm64-v8a-release.apk"
+          elif [ -f "$APK_DIR/app-release.apk" ]; then
+            SOURCE_APK="$APK_DIR/app-release.apk"
+          else
+            SOURCE_APK=$(find "$APK_DIR" -maxdepth 1 -type f -name "*.apk" | head -n 1)
+          fi
+
+          if [ -z "$SOURCE_APK" ]; then
+            echo "No APK found in $APK_DIR"
+            exit 1
+          fi
+
+          cp "$SOURCE_APK" Nanochat-arm64.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
