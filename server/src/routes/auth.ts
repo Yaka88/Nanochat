@@ -1,7 +1,10 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
+import path from 'path';
 import { registerUser, verifyEmail, loginWithEmail, loginWithId, getUserById } from '../services/auth.js';
 import { verifyToken } from '../middleware/auth.js';
+import { saveFile } from '../services/storage.js';
+import { prisma } from '../db.js';
 
 const registerSchema = z.object({
     email: z.string().email(),
@@ -26,10 +29,16 @@ export async function authRoutes(fastify: FastifyInstance) {
         try {
             const body = registerSchema.parse(request.body);
             const user = await registerUser(body);
+            const token = fastify.jwt.sign({
+                id: user.id,
+                email: user.email,
+                isRegistered: user.isRegistered,
+            });
 
             reply.code(201).send({
                 success: true,
                 message: 'Registration successful. Please check your email to verify your account.',
+                token,
                 user,
             });
         } catch (error: any) {
@@ -127,6 +136,74 @@ export async function authRoutes(fastify: FastifyInstance) {
             reply.send({ success: true, user });
         } catch (error: any) {
             reply.code(404).send({ error: error.message });
+        }
+    });
+
+    // POST /api/auth/upload-avatar
+    fastify.post('/upload-avatar', { preHandler: [verifyToken] }, async (request: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const data = await request.file();
+            if (!data) {
+                reply.code(400).send({ error: 'Avatar file is required' });
+                return;
+            }
+
+            const contentType = data.mimetype || '';
+            if (!contentType.startsWith('image/')) {
+                reply.code(400).send({ error: 'Only image files are allowed' });
+                return;
+            }
+
+            const extFromName = path.extname(data.filename || '');
+            const extension = extFromName || '.jpg';
+            const buffer = await data.toBuffer();
+            const avatarUrl = await saveFile(buffer, extension);
+
+            reply.code(201).send({
+                success: true,
+                avatarUrl,
+            });
+        } catch (error: any) {
+            reply.code(500).send({ error: error.message });
+        }
+    });
+
+    // PUT /api/auth/me/avatar
+    fastify.put('/me/avatar', { preHandler: [verifyToken] }, async (request: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const data = await request.file();
+            if (!data) {
+                reply.code(400).send({ error: 'Avatar file is required' });
+                return;
+            }
+
+            const contentType = data.mimetype || '';
+            if (!contentType.startsWith('image/')) {
+                reply.code(400).send({ error: 'Only image files are allowed' });
+                return;
+            }
+
+            const extFromName = path.extname(data.filename || '');
+            const extension = extFromName || '.jpg';
+            const buffer = await data.toBuffer();
+            const avatarUrl = await saveFile(buffer, extension);
+
+            const user = await prisma.user.update({
+                where: { id: request.user.id },
+                data: { avatarUrl },
+                select: {
+                    id: true,
+                    email: true,
+                    nickname: true,
+                    avatarUrl: true,
+                    isRegistered: true,
+                    lastGroupId: true,
+                },
+            });
+
+            reply.send({ success: true, user });
+        } catch (error: any) {
+            reply.code(500).send({ error: error.message });
         }
     });
 }

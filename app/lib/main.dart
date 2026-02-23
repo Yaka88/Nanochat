@@ -1,79 +1,47 @@
 import 'package:flutter/material.dart';
-import 'app/themes/app_theme.dart';
-import 'features/auth/login_screen.dart';
-import 'features/home/home_screen.dart';
-import 'core/api/api_client.dart';
-import 'core/auth/session_store.dart';
+import 'package:provider/provider.dart';
+import 'app/theme.dart';
+import 'app/routes.dart';
+import 'core/auth_provider.dart';
+import 'core/socket_provider.dart';
+import 'core/l10n.dart';
+import 'screens/home_screen.dart';
+import 'screens/welcome_screen.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
   runApp(const NanochatApp());
 }
 
-class NanochatApp extends StatefulWidget {
-  const NanochatApp({Key? key}) : super(key: key);
-
-  @override
-  State<NanochatApp> createState() => _NanochatAppState();
-}
-
-class _NanochatAppState extends State<NanochatApp> {
-  final ApiClient _apiClient = ApiClient();
-  Widget _home = const Scaffold(
-    body: Center(child: CircularProgressIndicator()),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    _bootstrap();
-  }
-
-  Future<void> _bootstrap() async {
-    try {
-      if (await SessionStore.hasAuthToken()) {
-        if (!mounted) return;
-        setState(() => _home = const HomeScreen());
-        return;
-      }
-
-      final userId = await SessionStore.getUserId();
-      final deviceId = await SessionStore.getDeviceId();
-      if (userId != null && userId.isNotEmpty && deviceId != null && deviceId.isNotEmpty) {
-        final response = await _apiClient.loginById(userId: userId, deviceId: deviceId);
-        final token = (response['token'] ?? '').toString();
-        final user = Map<String, dynamic>.from(response['user'] as Map? ?? {});
-        final refreshUserId = (user['id'] ?? '').toString();
-        final lastGroupId = user['lastGroupId']?.toString();
-
-        if (token.isNotEmpty && refreshUserId.isNotEmpty) {
-          await SessionStore.saveSession(
-            token: token,
-            userId: refreshUserId,
-            lastGroupId: lastGroupId,
-            deviceId: deviceId,
-          );
-          if (!mounted) return;
-          setState(() => _home = const HomeScreen());
-          return;
-        }
-      }
-    } catch (_) {
-      await SessionStore.clear();
-    }
-
-    if (!mounted) return;
-    setState(() => _home = const LoginScreen());
-  }
+class NanochatApp extends StatelessWidget {
+  const NanochatApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Nanochat',
-      theme: AppTheme.lightTheme,
-      home: _home,
-      debugShowCheckedModeBanner: false,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()..init()),
+        ChangeNotifierProvider(create: (_) => SocketProvider()),
+      ],
+      child: Consumer<AuthProvider>(
+        builder: (context, auth, _) {
+          return MaterialApp(
+            title: 'Nanochat',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.light,
+            localizationsDelegates: AppL10n.delegates,
+            supportedLocales: AppL10n.supportedLocales,
+            home: auth.isLoading
+                ? const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  )
+                : (auth.isLoggedIn
+                    ? const HomeScreen()
+                    : const WelcomeScreen()),
+            onGenerateRoute: AppRoutes.generate,
+          );
+        },
+      ),
     );
   }
 }

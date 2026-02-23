@@ -50,7 +50,10 @@ export async function registerUser(input: RegisterInput) {
         id: user.id,
         email: user.email,
         nickname: user.nickname,
+        avatarUrl: user.avatarUrl,
         emailVerified: user.emailVerified,
+        isRegistered: user.isRegistered,
+        lastGroupId: user.lastGroupId,
     };
 }
 
@@ -151,7 +154,7 @@ export async function getUserById(userId: string) {
         avatarUrl: user.avatarUrl,
         isRegistered: user.isRegistered,
         lastGroupId: user.lastGroupId,
-        groups: user.memberships.map(m => ({
+        groups: user.memberships.map((m: any) => ({
             id: m.group.id,
             name: m.group.name,
             nameInGroup: m.nameInGroup,

@@ -15,7 +15,7 @@ import { prisma } from '../db.js';
 
 const createGroupSchema = z.object({
     name: z.string().min(1).max(50),
-    nameInGroup: z.string().min(1).max(50),
+    nameInGroup: z.string().min(1).max(50).optional(),
 });
 
 const joinGroupSchema = z.object({
@@ -28,7 +28,7 @@ const joinGroupSchema = z.object({
     signature: z.string().min(1),
     // User fields
     nickname: z.string().min(1).max(50),
-    nameInGroup: z.string().min(1).max(50),
+    nameInGroup: z.string().min(1).max(50).optional(),
     avatarUrl: z.string().url().optional(),
     deviceId: z.string().min(1),
 });
@@ -48,10 +48,12 @@ export async function groupRoutes(fastify: FastifyInstance) {
     fastify.post('/', { preHandler: [verifyRegisteredUser] }, async (request: FastifyRequest, reply: FastifyReply) => {
         try {
             const body = createGroupSchema.parse(request.body);
+            const me = await prisma.user.findUnique({ where: { id: request.user.id } });
+            const creatorNameInGroup = body.nameInGroup || me?.nickname || '我';
             const group = await createGroup({
                 name: body.name,
                 creatorId: request.user.id,
-                creatorNameInGroup: body.nameInGroup,
+                creatorNameInGroup,
             });
 
             reply.code(201).send({ success: true, group });
@@ -143,10 +145,11 @@ export async function groupRoutes(fastify: FastifyInstance) {
             const user = await createMemberUser(body.nickname, body.avatarUrl, body.deviceId);
 
             // Join group
+            const nameInGroup = body.nameInGroup?.trim() || body.nickname;
             const group = await joinGroup({
                 inviteCode: body.inviteCode,
                 userId: user.id,
-                nameInGroup: body.nameInGroup,
+                nameInGroup,
             });
 
             // Generate token
