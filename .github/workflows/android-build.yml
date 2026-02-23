@@ -37,14 +37,19 @@ jobs:
           mkdir -p ../temp_lib
           mkdir -p ../temp_assets
           cp -r lib/* ../temp_lib/
-          cp -r assets/* ../temp_assets/
+          if [ -d assets ] && [ "$(ls -A assets 2>/dev/null)" ]; then
+            cp -r assets/. ../temp_assets/
+          fi
           cp pubspec.yaml ../temp_pubspec.yaml
           rm -rf *
           flutter create --org cn.bluelaser.nanochat .
           rm -rf lib/*
           rm -rf assets/*
           cp -r ../temp_lib/* lib/
-          cp -r ../temp_assets/* assets/
+          if [ "$(ls -A ../temp_assets 2>/dev/null)" ]; then
+            mkdir -p assets
+            cp -r ../temp_assets/. assets/
+          fi
           cp ../temp_pubspec.yaml pubspec.yaml
 
       - name: Flutter Pub Get
