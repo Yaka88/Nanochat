@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../core/api.dart';
+import '../core/auth_provider.dart';
 import '../core/l10n.dart';
 import '../core/storage.dart';
 
@@ -17,6 +19,11 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   String? _error;
 
   Future<void> _create() async {
+    final auth = context.read<AuthProvider>();
+    if (auth.isHost && !(auth.user?.emailVerified ?? false)) {
+      setState(() => _error = '请先完成邮箱验证，再创建家庭');
+      return;
+    }
     if (_nameCtrl.text.isEmpty) return;
     setState(() { _loading = true; _error = null; });
     try {
@@ -44,6 +51,8 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   @override
   Widget build(BuildContext context) {
     final t = (String k) => AppL10n.t(context, k);
+    final auth = context.watch<AuthProvider>();
+    final canCreate = !auth.isHost || (auth.user?.emailVerified ?? false);
     return Scaffold(
       appBar: AppBar(title: Text(t('create_group'))),
       body: Padding(
@@ -58,18 +67,24 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
               controller: _nameCtrl,
               style: const TextStyle(fontSize: 22),
               textAlign: TextAlign.center,
+              enabled: canCreate,
               decoration: InputDecoration(
                 labelText: t('group_name'),
                 prefixIcon: const Icon(Icons.edit, size: 28),
               ),
             ),
+            if (!canCreate) ...[
+              const SizedBox(height: 12),
+              const Text('请先验证邮箱，再创建家庭',
+                  style: TextStyle(color: Colors.orange, fontSize: 16)),
+            ],
             if (_error != null) ...[
               const SizedBox(height: 12),
               Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 16)),
             ],
             const Spacer(),
             ElevatedButton(
-              onPressed: _loading ? null : _create,
+              onPressed: (_loading || !canCreate) ? null : _create,
               child: _loading
                   ? const SizedBox(
                       width: 24, height: 24,

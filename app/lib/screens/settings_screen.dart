@@ -17,6 +17,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   List<Group> _groups = [];
   bool _uploadingAvatar = false;
+  bool _resendingVerification = false;
 
   @override
   void initState() {
@@ -184,6 +185,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _goCreateGroup() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isHost) return;
+    if (!(auth.user?.emailVerified ?? false)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先完成邮箱验证，再创建家庭')),
+        );
+      }
+      return;
+    }
+    await Navigator.pushNamed(context, '/create-group');
+  }
+
+  Future<void> _resendVerificationEmail() async {
+    if (_resendingVerification) return;
+    setState(() => _resendingVerification = true);
+    try {
+      await context.read<AuthProvider>().resendVerificationEmail();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('验证邮件已重新发送，请查收邮箱')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => _resendingVerification = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = (String k) => AppL10n.t(context, k);
@@ -226,6 +260,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Text(auth.isHost ? 'Host' : 'Member',
                             style: TextStyle(
                                 fontSize: 16, color: Colors.grey[500])),
+                        if (auth.isHost && !(user?.emailVerified ?? false)) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            '邮箱未验证',
+                            style: TextStyle(fontSize: 14, color: Colors.orange[700]),
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         OutlinedButton.icon(
                           onPressed: _uploadingAvatar ? null : _changeAvatar,
@@ -238,6 +279,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               : const Icon(Icons.photo_camera_outlined, size: 20),
                           label: const Text('更新头像', style: TextStyle(fontSize: 14)),
                         ),
+                        if (auth.isHost && !(user?.emailVerified ?? false)) ...[
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            onPressed: _resendingVerification ? null : _resendVerificationEmail,
+                            icon: _resendingVerification
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.mark_email_read_outlined, size: 20),
+                            label: const Text('重发验证邮件', style: TextStyle(fontSize: 14)),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -270,7 +325,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (auth.isHost) ...[
             const SizedBox(height: 8),
             OutlinedButton.icon(
-              onPressed: () => Navigator.pushNamed(context, '/create-group'),
+              onPressed: _goCreateGroup,
               style: OutlinedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 56)),
               icon: const Icon(Icons.add, size: 24),

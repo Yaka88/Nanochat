@@ -91,13 +91,18 @@ export function setupWebSocket(io: Server) {
         // ========================================
 
         // Request a call
-        socket.on('call:request', async (data: { targetUserId: string; callType: 'video' | 'voice'; groupId: string }) => {
+        socket.on('call:request', async (data: { targetUserId: string; isVideo?: boolean }) => {
             const target = connectedUsers.get(data.targetUserId);
             if (target) {
-                target.socket.emit('call:incoming', {
-                    callerId: userId,
-                    callType: data.callType,
-                    groupId: data.groupId,
+                const caller = await prisma.user.findUnique({
+                    where: { id: userId },
+                    select: { nickname: true },
+                });
+
+                target.socket.emit('call:request', {
+                    callerUserId: userId,
+                    callerName: caller?.nickname || 'Unknown',
+                    isVideo: data.isVideo ?? true,
                 });
             } else {
                 socket.emit('call:error', { message: 'User is offline' });
@@ -105,18 +110,18 @@ export function setupWebSocket(io: Server) {
         });
 
         // Accept call
-        socket.on('call:accept', (data: { callerId: string }) => {
-            const caller = connectedUsers.get(data.callerId);
-            if (caller) {
-                caller.socket.emit('call:accepted', { accepterId: userId });
+        socket.on('call:accept', (data: { targetUserId: string }) => {
+            const target = connectedUsers.get(data.targetUserId);
+            if (target) {
+                target.socket.emit('call:accept', { fromUserId: userId });
             }
         });
 
         // Reject call
-        socket.on('call:reject', (data: { callerId: string; reason?: string }) => {
-            const caller = connectedUsers.get(data.callerId);
-            if (caller) {
-                caller.socket.emit('call:rejected', { rejecterId: userId, reason: data.reason });
+        socket.on('call:reject', (data: { targetUserId: string; reason?: string }) => {
+            const target = connectedUsers.get(data.targetUserId);
+            if (target) {
+                target.socket.emit('call:reject', { fromUserId: userId, reason: data.reason });
             }
         });
 
@@ -124,7 +129,7 @@ export function setupWebSocket(io: Server) {
         socket.on('call:end', (data: { targetUserId: string }) => {
             const target = connectedUsers.get(data.targetUserId);
             if (target) {
-                target.socket.emit('call:ended', { endedBy: userId });
+                target.socket.emit('call:end', { fromUserId: userId });
             }
         });
 
@@ -133,18 +138,26 @@ export function setupWebSocket(io: Server) {
         // ========================================
 
         // SDP Offer
-        socket.on('signal:offer', (data: { targetUserId: string; offer: RTCSessionDescriptionInit }) => {
+        socket.on('signal:offer', (data: { targetUserId: string; sdp?: string; type?: string }) => {
             const target = connectedUsers.get(data.targetUserId);
             if (target) {
-                target.socket.emit('signal:offer', { fromUserId: userId, offer: data.offer });
+                target.socket.emit('signal:offer', {
+                    fromUserId: userId,
+                    sdp: data.sdp,
+                    type: data.type || 'offer',
+                });
             }
         });
 
         // SDP Answer
-        socket.on('signal:answer', (data: { targetUserId: string; answer: RTCSessionDescriptionInit }) => {
+        socket.on('signal:answer', (data: { targetUserId: string; sdp?: string; type?: string }) => {
             const target = connectedUsers.get(data.targetUserId);
             if (target) {
-                target.socket.emit('signal:answer', { fromUserId: userId, answer: data.answer });
+                target.socket.emit('signal:answer', {
+                    fromUserId: userId,
+                    sdp: data.sdp,
+                    type: data.type || 'answer',
+                });
             }
         });
 
@@ -208,12 +221,6 @@ export function notifyNewMessage(receiverId: string, message: any) {
     if (receiver) {
         receiver.socket.emit('message:new', message);
     }
-}
-
-// Type declaration for WebRTC
-interface RTCSessionDescriptionInit {
-    type: 'offer' | 'answer';
-    sdp?: string;
 }
 
 interface RTCIceCandidateInit {

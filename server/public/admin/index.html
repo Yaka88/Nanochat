@@ -283,6 +283,7 @@
                                 <th>昵称</th>
                                 <th>类型</th>
                                 <th>邮箱</th>
+                                <th>邮箱验证</th>
                                 <th>家庭数</th>
                                 <th>状态</th>
                                 <th>操作</th>
@@ -397,6 +398,7 @@
                             <td>${escapeHtml(u.nickname)}</td>
                             <td><span class="badge ${u.isRegistered ? 'badge-host' : 'badge-member'}">${u.isRegistered ? 'Host' : 'Member'}</span></td>
                             <td>${escapeHtml(u.email || '-')}</td>
+                            <td>${u.isRegistered ? (u.emailVerified ? '<span class="status-online">已验证</span>' : '<span class="status-offline">未验证</span>') : '-'}</td>
                             <td>${u.groupCount}</td>
                             <td class="${u.isOnline ? 'status-online' : 'status-offline'}">${u.isOnline ? '● 在线' : '○ 离线'}</td>
                             <td><button class="btn btn-small btn-danger" onclick="deleteUser('${escapeHtml(u.id)}','${escapeHtml(u.nickname)}')">删除</button></td>

@@ -103,6 +103,7 @@ export async function loginWithEmail(input: LoginInput) {
         email: user.email,
         nickname: user.nickname,
         avatarUrl: user.avatarUrl,
+        emailVerified: user.emailVerified,
         isRegistered: user.isRegistered,
         lastGroupId: user.lastGroupId,
     };
@@ -132,6 +133,7 @@ export async function loginWithId(userId: string, deviceId: string) {
         email: user.email,
         nickname: user.nickname,
         avatarUrl: user.avatarUrl,
+        emailVerified: user.emailVerified,
         isRegistered: user.isRegistered,
         lastGroupId: user.lastGroupId,
     };
@@ -158,6 +160,7 @@ export async function getUserById(userId: string) {
         email: user.email,
         nickname: user.nickname,
         avatarUrl: user.avatarUrl,
+        emailVerified: user.emailVerified,
         isRegistered: user.isRegistered,
         lastGroupId: user.lastGroupId,
         groups: user.memberships.map((m: any) => ({
@@ -214,5 +217,63 @@ export async function upgradeMemberToRegistered(input: UpgradeInput) {
         emailVerified: updated.emailVerified,
         isRegistered: updated.isRegistered,
         lastGroupId: updated.lastGroupId,
+    };
+}
+
+export async function resendVerificationEmailForUser(userId: string) {
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+            id: true,
+            email: true,
+            nickname: true,
+            avatarUrl: true,
+            emailVerified: true,
+            isRegistered: true,
+            lastGroupId: true,
+            isDisabled: true,
+        },
+    });
+
+    if (!user) {
+        throw new Error('User not found');
+    }
+
+    if (user.isDisabled) {
+        throw new Error('Account is disabled');
+    }
+
+    if (!user.isRegistered) {
+        throw new Error('Only registered users can resend verification email');
+    }
+
+    if (!user.email) {
+        throw new Error('Email is required');
+    }
+
+    if (user.emailVerified) {
+        throw new Error('Email is already verified');
+    }
+
+    const verifyToken = uuidv4();
+
+    await prisma.user.update({
+        where: { id: userId },
+        data: { verifyToken },
+    });
+
+    const sent = await sendVerificationEmail(user.email, verifyToken);
+    if (!sent) {
+        throw new Error('Failed to send verification email');
+    }
+
+    return {
+        id: user.id,
+        email: user.email,
+        nickname: user.nickname,
+        avatarUrl: user.avatarUrl,
+        emailVerified: user.emailVerified,
+        isRegistered: user.isRegistered,
+        lastGroupId: user.lastGroupId,
     };
 }

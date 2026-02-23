@@ -10,7 +10,7 @@ import {
     createMemberUser,
     verifyInvitePayload,
 } from '../services/groups.js';
-import { verifyToken, verifyRegisteredUser } from '../middleware/auth.js';
+import { verifyToken, verifyRegisteredUser, verifyRegisteredAndVerifiedUser } from '../middleware/auth.js';
 import { prisma } from '../db.js';
 
 const createGroupSchema = z.object({
@@ -45,7 +45,7 @@ export async function groupRoutes(fastify: FastifyInstance) {
     });
 
     // POST /api/groups - Create new group (Host only)
-    fastify.post('/', { preHandler: [verifyRegisteredUser] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    fastify.post('/', { preHandler: [verifyRegisteredAndVerifiedUser] }, async (request: FastifyRequest, reply: FastifyReply) => {
         try {
             const body = createGroupSchema.parse(request.body);
             const me = await prisma.user.findUnique({ where: { id: request.user.id } });

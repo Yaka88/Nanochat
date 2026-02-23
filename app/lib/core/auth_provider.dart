@@ -98,6 +98,14 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> resendVerificationEmail() async {
+    final data = await Api.resendVerificationEmail();
+    if (data['user'] is Map<String, dynamic>) {
+      _user = User.fromJson(data['user']);
+      notifyListeners();
+    }
+  }
+
   Future<void> updateAvatar(String filePath) async {
     final data = await Api.updateMyAvatar(filePath);
     _user = User.fromJson(data['user']);

@@ -96,6 +96,9 @@ class Api {
         'password': password,
       });
 
+  static Future<Map<String, dynamic>> resendVerificationEmail() =>
+      _request('POST', '/auth/resend-verification');
+
   static Future<Map<String, dynamic>> getMe() =>
       _request('GET', '/auth/me');
 

@@ -152,6 +152,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
                     select: {
                         id: true,
                         email: true,
+                        emailVerified: true,
                         nickname: true,
                         avatarUrl: true,
                         isRegistered: true,

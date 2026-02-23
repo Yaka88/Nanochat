@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import path from 'path';
-import { registerUser, verifyEmail, loginWithEmail, loginWithId, getUserById, upgradeMemberToRegistered } from '../services/auth.js';
+import { registerUser, verifyEmail, loginWithEmail, loginWithId, getUserById, upgradeMemberToRegistered, resendVerificationEmailForUser } from '../services/auth.js';
 import { verifyToken } from '../middleware/auth.js';
 import { saveFile } from '../services/storage.js';
 import { prisma } from '../db.js';
@@ -175,6 +175,20 @@ export async function authRoutes(fastify: FastifyInstance) {
         }
     });
 
+    // POST /api/auth/resend-verification
+    fastify.post('/resend-verification', { preHandler: [verifyToken] }, async (request: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const user = await resendVerificationEmailForUser(request.user.id);
+            reply.send({
+                success: true,
+                message: 'Verification email sent',
+                user,
+            });
+        } catch (error: any) {
+            reply.code(400).send({ error: error.message });
+        }
+    });
+
     // POST /api/auth/upload-avatar
     fastify.post('/upload-avatar', { preHandler: [verifyToken] }, async (request: FastifyRequest, reply: FastifyReply) => {
         try {
@@ -230,6 +244,7 @@ export async function authRoutes(fastify: FastifyInstance) {
                 select: {
                     id: true,
                     email: true,
+                    emailVerified: true,
                     nickname: true,
                     avatarUrl: true,
                     isRegistered: true,

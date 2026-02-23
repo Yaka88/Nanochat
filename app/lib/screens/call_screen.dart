@@ -30,6 +30,8 @@ class _CallScreenState extends State<CallScreen> {
   bool _muted = false;
   bool _speakerOn = true;
   bool _cleaned = false;
+  final List<RTCIceCandidate> _pendingRemoteCandidates = [];
+  bool _remoteDescriptionSet = false;
 
   @override
   void initState() {
@@ -79,17 +81,24 @@ class _CallScreenState extends State<CallScreen> {
     final socket = context.read<SocketProvider>();
 
     socket.onSignalAnswer = (data) async {
-      await _pc!.setRemoteDescription(
+      await _setRemoteDescriptionAndFlush(
         RTCSessionDescription(data['sdp'], data['type']),
       );
     };
 
     socket.onSignalIce = (data) async {
-      await _pc!.addCandidate(RTCIceCandidate(
+      final candidate = RTCIceCandidate(
         data['candidate']['candidate'],
         data['candidate']['sdpMid'],
         data['candidate']['sdpMLineIndex'],
-      ));
+      );
+
+      if (!_remoteDescriptionSet || _pc?.remoteDescription == null) {
+        _pendingRemoteCandidates.add(candidate);
+        return;
+      }
+
+      await _pc!.addCandidate(candidate);
     };
 
     socket.onCallAccepted = (_) => _createOffer();
@@ -97,7 +106,7 @@ class _CallScreenState extends State<CallScreen> {
     socket.onCallEnded = (_) => _endCall();
 
     socket.onSignalOffer = (data) async {
-      await _pc!.setRemoteDescription(
+      await _setRemoteDescriptionAndFlush(
         RTCSessionDescription(data['sdp'], data['type']),
       );
       final answer = await _pc!.createAnswer();
@@ -116,6 +125,17 @@ class _CallScreenState extends State<CallScreen> {
     });
 
     setState(() {});
+  }
+
+  Future<void> _setRemoteDescriptionAndFlush(RTCSessionDescription desc) async {
+    await _pc!.setRemoteDescription(desc);
+    _remoteDescriptionSet = true;
+    if (_pendingRemoteCandidates.isNotEmpty) {
+      for (final candidate in _pendingRemoteCandidates) {
+        await _pc!.addCandidate(candidate);
+      }
+      _pendingRemoteCandidates.clear();
+    }
   }
 
   Future<void> _createOffer() async {

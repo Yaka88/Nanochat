@@ -197,7 +197,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _groups.isEmpty
-              ? _EmptyState(isHost: auth.isHost)
+            ? _EmptyState(
+              isHost: auth.isHost,
+              isVerifiedHost: auth.isHost && (auth.user?.emailVerified ?? false),
+            )
               : RefreshIndicator(
                   onRefresh: _loadMembers,
                   child: ListView.builder(
@@ -298,7 +301,8 @@ class _GroupDropdown extends StatelessWidget {
 
 class _EmptyState extends StatelessWidget {
   final bool isHost;
-  const _EmptyState({required this.isHost});
+  final bool isVerifiedHost;
+  const _EmptyState({required this.isHost, required this.isVerifiedHost});
 
   @override
   Widget build(BuildContext context) {
@@ -314,7 +318,13 @@ class _EmptyState extends StatelessWidget {
           const SizedBox(height: 24),
           if (isHost)
             ElevatedButton.icon(
-              onPressed: () => Navigator.pushNamed(context, '/create-group'),
+              onPressed: isVerifiedHost
+                  ? () => Navigator.pushNamed(context, '/create-group')
+                  : () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('请先完成邮箱验证，再创建家庭')),
+                      );
+                    },
               icon: const Icon(Icons.add, size: 28),
               label: Text(t('create_group')),
             ),

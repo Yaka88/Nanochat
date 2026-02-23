@@ -4,6 +4,7 @@ class User {
   final String nickname;
   final String? avatarUrl;
   final bool isRegistered;
+  final bool emailVerified;
   final String? deviceId;
   final bool isOnline;
   final String? lastGroupId;
@@ -14,6 +15,7 @@ class User {
     required this.nickname,
     this.avatarUrl,
     this.isRegistered = false,
+    this.emailVerified = false,
     this.deviceId,
     this.isOnline = false,
     this.lastGroupId,
@@ -25,6 +27,7 @@ class User {
         nickname: json['nickname'],
         avatarUrl: json['avatarUrl'],
         isRegistered: json['isRegistered'] ?? false,
+        emailVerified: json['emailVerified'] ?? false,
         deviceId: json['deviceId'],
         isOnline: json['isOnline'] ?? false,
         lastGroupId: json['lastGroupId'],
@@ -36,6 +39,7 @@ class User {
         'nickname': nickname,
         'avatarUrl': avatarUrl,
         'isRegistered': isRegistered,
+        'emailVerified': emailVerified,
         'deviceId': deviceId,
         'isOnline': isOnline,
         'lastGroupId': lastGroupId,
