@@ -95,7 +95,10 @@ class SocketProvider extends ChangeNotifier {
 
   void updateBulkOnlineStatus(List<dynamic> members) {
     for (final m in members) {
-      _onlineStatus[m['userId']] = m['isOnline'] ?? false;
+      if (m is! Map) continue;
+      final userId = (m['userId'] ?? m['id'])?.toString();
+      if (userId == null || userId.isEmpty) continue;
+      _onlineStatus[userId] = m['isOnline'] ?? false;
     }
     notifyListeners();
   }

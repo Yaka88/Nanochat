@@ -118,14 +118,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (_currentGroup == null) return;
     try {
       final res = await Api.getGroupMembers(_currentGroup!.id);
-      final members = (res['members'] as List)
-          .map((m) => GroupMember.fromJson(m))
+      final rawMembers = (res['members'] as List?) ?? const [];
+      final members = rawMembers
+          .whereType<Map>()
+          .map((m) => GroupMember.fromJson(Map<String, dynamic>.from(m)))
           .toList();
 
       // Update online status cache
       if (mounted) {
-        context.read<SocketProvider>().updateBulkOnlineStatus(
-            res['members'] as List);
+        context.read<SocketProvider>().updateBulkOnlineStatus(rawMembers);
       }
 
       final myId = context.read<AuthProvider>().user?.id;

@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import path from 'path';
-import { registerUser, verifyEmail, loginWithEmail, loginWithId, getUserById } from '../services/auth.js';
+import { registerUser, verifyEmail, loginWithEmail, loginWithId, getUserById, upgradeMemberToRegistered } from '../services/auth.js';
 import { verifyToken } from '../middleware/auth.js';
 import { saveFile } from '../services/storage.js';
 import { prisma } from '../db.js';
@@ -21,6 +21,11 @@ const loginSchema = z.object({
 const loginByIdSchema = z.object({
     userId: z.string().uuid(),
     deviceId: z.string().min(1),
+});
+
+const upgradeSchema = z.object({
+    email: z.string().email(),
+    password: z.string().min(6),
 });
 
 export async function authRoutes(fastify: FastifyInstance) {
@@ -136,6 +141,37 @@ export async function authRoutes(fastify: FastifyInstance) {
             reply.send({ success: true, user });
         } catch (error: any) {
             reply.code(404).send({ error: error.message });
+        }
+    });
+
+    // POST /api/auth/upgrade
+    fastify.post('/upgrade', { preHandler: [verifyToken] }, async (request: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const body = upgradeSchema.parse(request.body);
+            const user = await upgradeMemberToRegistered({
+                userId: request.user.id,
+                email: body.email,
+                password: body.password,
+            });
+
+            const token = fastify.jwt.sign({
+                id: user.id,
+                email: user.email,
+                isRegistered: user.isRegistered,
+            });
+
+            reply.send({
+                success: true,
+                message: 'Registration upgrade successful. Please check your email to verify your account.',
+                token,
+                user,
+            });
+        } catch (error: any) {
+            if (error.name === 'ZodError') {
+                reply.code(400).send({ error: 'Validation error', details: error.errors });
+            } else {
+                reply.code(400).send({ error: error.message });
+            }
         }
     });
 

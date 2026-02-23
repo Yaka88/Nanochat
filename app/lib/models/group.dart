@@ -14,10 +14,13 @@ class Group {
   });
 
   factory Group.fromJson(Map<String, dynamic> json) => Group(
-        id: json['id'],
-        name: json['name'],
-        creatorId: json['creatorId'],
-        inviteCode: json['inviteCode'],
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      creatorId: json['creatorId']?.toString() ??
+        json['creator_id']?.toString() ??
+        json['creator']?['id']?.toString() ??
+        '',
+      inviteCode: json['inviteCode']?.toString() ?? json['invite_code']?.toString(),
         inviteExpiresAt: json['inviteExpiresAt'] != null
             ? DateTime.parse(json['inviteExpiresAt'])
             : null,
@@ -42,10 +45,10 @@ class GroupMember {
   });
 
   factory GroupMember.fromJson(Map<String, dynamic> json) => GroupMember(
-        id: json['id'],
-        userId: json['userId'],
-        groupId: json['groupId'],
-        nameInGroup: json['nameInGroup'],
+      id: json['id']?.toString() ?? '',
+      userId: json['userId']?.toString() ?? json['id']?.toString() ?? '',
+      groupId: json['groupId']?.toString() ?? json['group_id']?.toString() ?? '',
+      nameInGroup: json['nameInGroup']?.toString() ?? json['nickname']?.toString() ?? '',
         avatarUrl: json['avatarUrl'] ?? json['user']?['avatarUrl'],
         isOnline: json['isOnline'] ?? json['user']?['isOnline'] ?? false,
       );

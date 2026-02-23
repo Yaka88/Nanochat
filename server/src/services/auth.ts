@@ -15,6 +15,12 @@ interface LoginInput {
     password: string;
 }
 
+interface UpgradeInput {
+    userId: string;
+    email: string;
+    password: string;
+}
+
 export async function registerUser(input: RegisterInput) {
     const { email, password, nickname, avatarUrl } = input;
 
@@ -159,5 +165,54 @@ export async function getUserById(userId: string) {
             name: m.group.name,
             nameInGroup: m.nameInGroup,
         })),
+    };
+}
+
+export async function upgradeMemberToRegistered(input: UpgradeInput) {
+    const { userId, email, password } = input;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+        throw new Error('User not found');
+    }
+
+    if (user.isDisabled) {
+        throw new Error('Account is disabled');
+    }
+
+    if (user.isRegistered) {
+        throw new Error('Account is already registered');
+    }
+
+    const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (existing) {
+        throw new Error('Email already registered');
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const verifyToken = uuidv4();
+
+    const updated = await prisma.user.update({
+        where: { id: userId },
+        data: {
+            email: normalizedEmail,
+            passwordHash,
+            isRegistered: true,
+            emailVerified: false,
+            verifyToken,
+        },
+    });
+
+    await sendVerificationEmail(normalizedEmail, verifyToken);
+
+    return {
+        id: updated.id,
+        email: updated.email,
+        nickname: updated.nickname,
+        avatarUrl: updated.avatarUrl,
+        emailVerified: updated.emailVerified,
+        isRegistered: updated.isRegistered,
+        lastGroupId: updated.lastGroupId,
     };
 }

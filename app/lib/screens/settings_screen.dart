@@ -34,11 +34,113 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _logout() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isHost) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Member 账号会自动登录，不能退出')), 
+        );
+      }
+      return;
+    }
     context.read<SocketProvider>().disconnect();
-    await context.read<AuthProvider>().logout();
+    await auth.logout();
     if (mounted) {
       Navigator.pushNamedAndRemoveUntil(context, '/welcome', (_) => false);
     }
+  }
+
+  Future<void> _upgradeToRegistered() async {
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
+    final confirmController = TextEditingController();
+    var submitting = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('注册成为Host'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(labelText: '邮箱'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: '密码（至少6位）'),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: confirmController,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: '确认密码'),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: submitting ? null : () => Navigator.pop(ctx),
+                child: const Text('取消'),
+              ),
+              ElevatedButton(
+                onPressed: submitting
+                    ? null
+                    : () async {
+                        final email = emailController.text.trim();
+                        final password = passwordController.text;
+                        final confirm = confirmController.text;
+
+                        if (email.isEmpty || password.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('请填写邮箱和密码')),
+                          );
+                          return;
+                        }
+                        if (password != confirm) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('两次密码不一致')),
+                          );
+                          return;
+                        }
+
+                        setDialogState(() => submitting = true);
+                        try {
+                          await context.read<AuthProvider>().upgradeToRegistered(
+                                email: email,
+                                password: password,
+                              );
+                          if (!mounted) return;
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('升级成功，请查收验证邮件'),
+                            ),
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(e.toString())),
+                          );
+                        } finally {
+                          if (mounted) {
+                            setDialogState(() => submitting = false);
+                          }
+                        }
+                      },
+                child: const Text('确认升级'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _changeAvatar() async {
@@ -175,18 +277,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
               label: Text(t('create_group'),
                   style: const TextStyle(fontSize: 18)),
             ),
-          ],
-          const SizedBox(height: 32),
-          // Logout
-          ElevatedButton.icon(
-            onPressed: _logout,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
+          ] else ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _upgradeToRegistered,
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 56),
+              ),
+              icon: const Icon(Icons.verified_user_outlined, size: 24),
+              label: const Text('注册成为Host', style: TextStyle(fontSize: 18)),
             ),
-            icon: const Icon(Icons.logout, size: 24),
-            label: Text(t('logout')),
-          ),
+          ],
+          if (auth.isHost) ...[
+            const SizedBox(height: 32),
+            ElevatedButton.icon(
+              onPressed: _logout,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              icon: const Icon(Icons.logout, size: 24),
+              label: Text(t('logout')),
+            ),
+          ],
         ],
       ),
     );

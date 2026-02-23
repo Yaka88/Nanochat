@@ -87,6 +87,15 @@ class Api {
         'deviceId': deviceId,
       });
 
+  static Future<Map<String, dynamic>> upgradeToRegistered({
+    required String email,
+    required String password,
+  }) =>
+      _request('POST', '/auth/upgrade', body: {
+        'email': email,
+        'password': password,
+      });
+
   static Future<Map<String, dynamic>> getMe() =>
       _request('GET', '/auth/me');
 

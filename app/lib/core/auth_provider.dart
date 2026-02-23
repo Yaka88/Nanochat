@@ -87,6 +87,17 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> upgradeToRegistered({
+    required String email,
+    required String password,
+  }) async {
+    final data = await Api.upgradeToRegistered(email: email, password: password);
+    await LocalStorage.setToken(data['token']);
+    await LocalStorage.setIsRegistered(true);
+    _user = User.fromJson(data['user']);
+    notifyListeners();
+  }
+
   Future<void> updateAvatar(String filePath) async {
     final data = await Api.updateMyAvatar(filePath);
     _user = User.fromJson(data['user']);
