@@ -20,7 +20,7 @@ dependencies:
   qr_flutter: ^4.1.0
   mobile_scanner: ^5.1.1
   # WebRTC
-  flutter_webrtc: ^0.11.7
+  flutter_webrtc: ^1.0.0
   # Audio recording
   record: ^6.1.1
   audioplayers: ^6.0.0
