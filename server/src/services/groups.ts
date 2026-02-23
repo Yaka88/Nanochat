@@ -61,7 +61,24 @@ export function verifyInvitePayload(data: InviteVerifyInput): void {
 }
 
 export async function createGroup(input: CreateGroupInput) {
-    const { name, creatorId, creatorNameInGroup } = input;
+    const { creatorId, creatorNameInGroup } = input;
+    const name = input.name.trim();
+
+    if (!name) {
+        throw new Error('Group name is required');
+    }
+
+    const existingSameName = await prisma.group.findFirst({
+        where: {
+            creatorId,
+            name: { equals: name, mode: 'insensitive' },
+        },
+        select: { id: true },
+    });
+
+    if (existingSameName) {
+        throw new Error('Group name already exists for this host');
+    }
 
     // Check group count limit
     const groupCount = await getSystemConfig('groupcount');
@@ -132,6 +149,7 @@ export async function getUserGroups(userId: string) {
     return memberships.map(m => ({
         id: m.group.id,
         name: m.group.name,
+        creatorId: m.group.creatorId,
         nameInGroup: m.nameInGroup,
         memberCount: m.group._count.members,
         joinedAt: m.joinedAt,

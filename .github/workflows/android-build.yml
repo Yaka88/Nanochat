@@ -8,6 +8,9 @@ on:
       - 'app/**'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -61,8 +64,15 @@ jobs:
       - name: Rename APK
         run: mv build/app/outputs/flutter-apk/app-release.apk Nanochat.apk
 
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
+      - name: Generate Release Tag
+        id: tag
+        run: |
+          echo "tag_name=android-${{ github.run_id }}-${{ github.run_attempt }}" >> $GITHUB_OUTPUT
+
+      - name: Publish APK to Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: nanochat-release-apk
-          path: app/Nanochat.apk
+          tag_name: ${{ steps.tag.outputs.tag_name }}
+          name: Android Build ${{ steps.tag.outputs.tag_name }}
+          generate_release_notes: true
+          files: app/Nanochat.apk

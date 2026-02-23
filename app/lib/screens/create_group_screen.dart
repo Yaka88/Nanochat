@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../core/api.dart';
 import '../core/l10n.dart';
+import '../core/storage.dart';
 
 /// Create a new family group (Host only)
 class CreateGroupScreen extends StatefulWidget {
@@ -19,7 +20,12 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
     if (_nameCtrl.text.isEmpty) return;
     setState(() { _loading = true; _error = null; });
     try {
-      await Api.createGroup(name: _nameCtrl.text.trim());
+      final res = await Api.createGroup(name: _nameCtrl.text.trim());
+      final group = res['group'] as Map<String, dynamic>?;
+      final groupId = group?['id']?.toString();
+      if (groupId != null && groupId.isNotEmpty) {
+        await LocalStorage.setLastGroupId(groupId);
+      }
       if (mounted) {
         Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
       }

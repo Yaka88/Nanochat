@@ -201,8 +201,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   onRefresh: _loadMembers,
                   child: ListView.builder(
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: _members.length,
+                    itemCount: _members.length +
+                        ((auth.isHost && _currentGroup != null) ? 1 : 0),
                     itemBuilder: (_, i) {
+                      if (i >= _members.length) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                          child: ElevatedButton.icon(
+                            onPressed: _showInviteDialog,
+                            icon: const Icon(Icons.qr_code_2, size: 28),
+                            label: Text(
+                              AppL10n.t(context, 'share_qr'),
+                              style: const TextStyle(fontSize: 20),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              minimumSize: const Size(double.infinity, 64),
+                            ),
+                          ),
+                        );
+                      }
+
                       final m = _members[i];
                       final online = socket.isUserOnline(m.userId) || m.isOnline;
                       return MemberCard(
@@ -215,14 +233,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     },
                   ),
                 ),
-      floatingActionButton: auth.isHost && _currentGroup != null
-          ? FloatingActionButton.extended(
-              onPressed: () => _showInviteDialog(),
-              icon: const Icon(Icons.person_add, size: 28),
-              label: Text(t('invite_member'),
-                  style: const TextStyle(fontSize: 18)),
-            )
-          : null,
     );
   }
 
