@@ -93,7 +93,7 @@ class _CallScreenState extends State<CallScreen> {
         data['candidate']['sdpMLineIndex'],
       );
 
-      if (!_remoteDescriptionSet || _pc?.remoteDescription == null) {
+      if (!_remoteDescriptionSet) {
         _pendingRemoteCandidates.add(candidate);
         return;
       }
