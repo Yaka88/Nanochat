@@ -9,11 +9,21 @@ export async function messageRoutes(fastify: FastifyInstance) {
     // GET /api/messages - List voice messages for user
     fastify.get('/', { preHandler: [verifyToken] }, async (request: FastifyRequest, reply: FastifyReply) => {
         try {
-            const { groupId, unreadOnly } = request.query as { groupId?: string; unreadOnly?: string };
+            const { groupId, unreadOnly, userId } = request.query as { groupId?: string; unreadOnly?: string; userId?: string };
 
             const where: any = {
-                receiverId: request.user.id,
+                OR: [
+                    { receiverId: request.user.id },
+                    { senderId: request.user.id },
+                ],
             };
+
+            if (userId) {
+                where.OR = [
+                    { senderId: request.user.id, receiverId: userId },
+                    { senderId: userId, receiverId: request.user.id },
+                ];
+            }
 
             if (groupId) {
                 where.groupId = groupId;
@@ -48,6 +58,9 @@ export async function messageRoutes(fastify: FastifyInstance) {
                 success: true,
                 messages: messages.map(m => ({
                     id: m.id,
+                    groupId: m.groupId,
+                    senderId: m.senderId,
+                    receiverId: m.receiverId,
                     audioUrl: m.audioUrl,
                     durationSeconds: m.durationSeconds,
                     isRead: m.isRead,

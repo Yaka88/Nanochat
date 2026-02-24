@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../core/api.dart';
@@ -23,6 +25,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<GroupMember> _members = [];
   Group? _currentGroup;
   bool _loading = true;
+  Timer? _ringTimer;
+  bool _incomingDialogOpen = false;
+  String? _pendingCallerUserId;
+  bool _incomingHandled = false;
 
   @override
   void initState() {
@@ -35,18 +41,40 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _stopIncomingRing();
     final socket = context.read<SocketProvider>();
     socket.onCallRequest = null;
+    socket.onCallEnded = null;
     super.dispose();
+  }
+
+  void _startIncomingRing() {
+    _stopIncomingRing();
+    SystemSound.play(SystemSoundType.alert);
+    _ringTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      SystemSound.play(SystemSoundType.alert);
+    });
+  }
+
+  void _stopIncomingRing() {
+    _ringTimer?.cancel();
+    _ringTimer = null;
   }
 
   void _setupSocketHandlers() {
     final socket = context.read<SocketProvider>();
     socket.onCallRequest = (data) {
       if (!mounted) return;
+      if (_incomingDialogOpen) return;
       final callerName = (data['callerName'] ?? data['name'] ?? 'Unknown') as String;
       final callerUserId = (data['callerUserId'] ?? data['userId'] ?? '') as String;
       final isVideo = (data['isVideo'] ?? true) as bool;
+      if (callerUserId.isEmpty) return;
+
+      _incomingDialogOpen = true;
+      _pendingCallerUserId = callerUserId;
+      _incomingHandled = false;
+      _startIncomingRing();
 
       Navigator.of(context).push(
         MaterialPageRoute(
@@ -55,21 +83,52 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             callerName: callerName,
             isVideo: isVideo,
             onAccept: () {
+              _incomingHandled = true;
+              _stopIncomingRing();
               socket.emit('call:accept', {'targetUserId': callerUserId});
               Navigator.of(context).pop();
+              _incomingDialogOpen = false;
+              _pendingCallerUserId = null;
               Navigator.pushNamed(context, '/call', arguments: {
                 'userId': callerUserId,
                 'name': callerName,
                 'isVideo': isVideo,
+                'isIncoming': true,
               });
             },
             onReject: () {
+              _incomingHandled = true;
+              _stopIncomingRing();
               socket.emit('call:reject', {'targetUserId': callerUserId});
               Navigator.of(context).pop();
+              _incomingDialogOpen = false;
+              _pendingCallerUserId = null;
             },
           ),
         ),
-      );
+      ).then((_) {
+        if (!_incomingHandled && _pendingCallerUserId != null) {
+          socket.emit('call:reject', {'targetUserId': _pendingCallerUserId});
+        }
+        _stopIncomingRing();
+        _incomingDialogOpen = false;
+        _pendingCallerUserId = null;
+        _incomingHandled = false;
+      });
+    };
+
+    socket.onCallEnded = (data) {
+      final fromUserId = data['fromUserId']?.toString();
+      if (!_incomingDialogOpen || fromUserId == null) return;
+      if (fromUserId != _pendingCallerUserId) return;
+
+      _incomingHandled = true;
+      _stopIncomingRing();
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      _incomingDialogOpen = false;
+      _pendingCallerUserId = null;
     };
   }
 
@@ -149,6 +208,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       'userId': m.userId,
       'name': m.nameInGroup,
       'isVideo': true,
+      'isIncoming': false,
     });
   }
 
@@ -157,6 +217,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       'userId': m.userId,
       'name': m.nameInGroup,
       'isVideo': false,
+      'isIncoming': false,
     });
   }
 

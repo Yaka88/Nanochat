@@ -42,6 +42,7 @@ class AppRoutes {
         final userId = args['userId'];
         final name = args['name'];
         final isVideo = args['isVideo'];
+        final isIncoming = args['isIncoming'] == true;
         if (userId is! String || name is! String || isVideo is! bool) {
           return _page(const HomeScreen());
         }
@@ -49,6 +50,7 @@ class AppRoutes {
           targetUserId: userId,
           targetName: name,
           isVideo: isVideo,
+          isIncoming: isIncoming,
         ));
       case '/voice-message':
         final args = _safeArgs(settings);

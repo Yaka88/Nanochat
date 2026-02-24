@@ -18,6 +18,24 @@ interface ConnectedUser {
 // In-memory store for connected users
 const connectedUsers = new Map<string, ConnectedUser>();
 
+async function hasCommonGroup(userA: string, userB: string): Promise<boolean> {
+    const member = await prisma.groupMember.findFirst({
+        where: {
+            userId: userA,
+            group: {
+                members: {
+                    some: {
+                        userId: userB,
+                    },
+                },
+            },
+        },
+        select: { id: true },
+    });
+
+    return !!member;
+}
+
 export function setupWebSocket(io: Server) {
     prisma.user.updateMany({ data: { isOnline: false } }).catch((error) => {
         console.error('Failed to reset online status on startup:', error);
@@ -86,12 +104,30 @@ export function setupWebSocket(io: Server) {
             });
         }
 
+        // Send current presence snapshot to the newly connected user
+        const onlineUserIds = Array.from(connectedUsers.values())
+            .filter((u) => u.userId !== userId && u.groupIds.some((gid) => groupIds.includes(gid)))
+            .map((u) => u.userId);
+
+        socket.emit('presence:snapshot', { onlineUserIds });
+
         // ========================================
         // Call Signaling Events
         // ========================================
 
         // Request a call
         socket.on('call:request', async (data: { targetUserId: string; isVideo?: boolean }) => {
+            if (!data?.targetUserId || data.targetUserId === userId) {
+                socket.emit('call:error', { message: 'Invalid call target' });
+                return;
+            }
+
+            const authorized = await hasCommonGroup(userId, data.targetUserId);
+            if (!authorized) {
+                socket.emit('call:error', { message: 'Not allowed to call this user' });
+                return;
+            }
+
             const target = connectedUsers.get(data.targetUserId);
             if (target) {
                 const caller = await prisma.user.findUnique({

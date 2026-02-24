@@ -11,6 +11,13 @@ class SocketProvider extends ChangeNotifier {
   Future<void> connect() async {
     if (_socket?.connected == true) return;
 
+    if (_socket != null) {
+      _socket!.dispose();
+      _socket = null;
+    }
+
+    _onlineStatus.clear();
+
     final token = await LocalStorage.getToken();
     if (token == null) return;
 
@@ -20,12 +27,26 @@ class SocketProvider extends ChangeNotifier {
           .setTransports(['websocket'])
           .setExtraHeaders({'Authorization': 'Bearer $token'})
           .setAuth({'token': token})
+          .enableReconnection()
+          .setReconnectionAttempts(10)
+          .setReconnectionDelay(1000)
           .enableAutoConnect()
           .build(),
     );
 
     _socket!.onConnect((_) => debugPrint('[WS] Connected'));
     _socket!.onDisconnect((_) => debugPrint('[WS] Disconnected'));
+
+    _socket!.on('presence:snapshot', (data) {
+      final ids = (data is Map ? data['onlineUserIds'] : null) as List<dynamic>?;
+      if (ids == null) return;
+      for (final id in ids) {
+        final userId = id?.toString();
+        if (userId == null || userId.isEmpty) continue;
+        _onlineStatus[userId] = true;
+      }
+      notifyListeners();
+    });
 
     _socket!.on('user:online', (data) {
       _onlineStatus[data['userId']] = true;
@@ -54,6 +75,10 @@ class SocketProvider extends ChangeNotifier {
       _onCallEnded?.call(data);
     });
 
+    _socket!.on('call:error', (data) {
+      _onCallError?.call(data);
+    });
+
     // WebRTC signaling
     _socket!.on('signal:offer', (data) => _onSignalOffer?.call(data));
     _socket!.on('signal:answer', (data) => _onSignalAnswer?.call(data));
@@ -79,6 +104,7 @@ class SocketProvider extends ChangeNotifier {
   Function(dynamic)? _onCallAccepted;
   Function(dynamic)? _onCallRejected;
   Function(dynamic)? _onCallEnded;
+  Function(dynamic)? _onCallError;
   Function(dynamic)? _onSignalOffer;
   Function(dynamic)? _onSignalAnswer;
   Function(dynamic)? _onSignalIce;
@@ -88,10 +114,20 @@ class SocketProvider extends ChangeNotifier {
   set onCallAccepted(Function(dynamic)? fn) => _onCallAccepted = fn;
   set onCallRejected(Function(dynamic)? fn) => _onCallRejected = fn;
   set onCallEnded(Function(dynamic)? fn) => _onCallEnded = fn;
+  set onCallError(Function(dynamic)? fn) => _onCallError = fn;
   set onSignalOffer(Function(dynamic)? fn) => _onSignalOffer = fn;
   set onSignalAnswer(Function(dynamic)? fn) => _onSignalAnswer = fn;
   set onSignalIce(Function(dynamic)? fn) => _onSignalIce = fn;
   set onNewMessage(Function(dynamic)? fn) => _onNewMessage = fn;
+
+  Function(dynamic)? get onCallRequestHandler => _onCallRequest;
+  Function(dynamic)? get onCallAcceptedHandler => _onCallAccepted;
+  Function(dynamic)? get onCallRejectedHandler => _onCallRejected;
+  Function(dynamic)? get onCallEndedHandler => _onCallEnded;
+  Function(dynamic)? get onCallErrorHandler => _onCallError;
+  Function(dynamic)? get onSignalOfferHandler => _onSignalOffer;
+  Function(dynamic)? get onSignalAnswerHandler => _onSignalAnswer;
+  Function(dynamic)? get onSignalIceHandler => _onSignalIce;
 
   void updateBulkOnlineStatus(List<dynamic> members) {
     for (final m in members) {

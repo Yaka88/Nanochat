@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -9,12 +10,14 @@ class CallScreen extends StatefulWidget {
   final String targetUserId;
   final String targetName;
   final bool isVideo;
+  final bool isIncoming;
 
   const CallScreen({
     super.key,
     required this.targetUserId,
     required this.targetName,
     required this.isVideo,
+    this.isIncoming = false,
   });
 
   @override
@@ -30,8 +33,19 @@ class _CallScreenState extends State<CallScreen> {
   bool _muted = false;
   bool _speakerOn = true;
   bool _cleaned = false;
+  bool _offerCreated = false;
+  bool _accepted = false;
+  Timer? _outgoingTimeoutTimer;
   final List<RTCIceCandidate> _pendingRemoteCandidates = [];
   bool _remoteDescriptionSet = false;
+
+  Function(dynamic)? _prevOnCallAccepted;
+  Function(dynamic)? _prevOnCallRejected;
+  Function(dynamic)? _prevOnCallEnded;
+  Function(dynamic)? _prevOnCallError;
+  Function(dynamic)? _prevOnSignalOffer;
+  Function(dynamic)? _prevOnSignalAnswer;
+  Function(dynamic)? _prevOnSignalIce;
 
   @override
   void initState() {
@@ -40,8 +54,9 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   Future<void> _init() async {
-    await _localRenderer.initialize();
-    await _remoteRenderer.initialize();
+    try {
+      await _localRenderer.initialize();
+      await _remoteRenderer.initialize();
 
     // Get local media
     _localStream = await navigator.mediaDevices.getUserMedia({
@@ -56,8 +71,12 @@ class _CallScreenState extends State<CallScreen> {
     _pc = await createPeerConnection({
       'iceServers': [
         {'urls': 'stun:chat.bluelaser.cn:3478'},
+        {'urls': 'stun:stun.l.google.com:19302'},
+        {'urls': 'stun:stun1.l.google.com:19302'},
       ],
     });
+
+    await Helper.setSpeakerphoneOn(true);
 
     _localStream!.getTracks().forEach((t) => _pc!.addTrack(t, _localStream!));
 
@@ -80,13 +99,23 @@ class _CallScreenState extends State<CallScreen> {
     // Listen for signaling
     final socket = context.read<SocketProvider>();
 
+    _prevOnCallAccepted = socket.onCallAcceptedHandler;
+    _prevOnCallRejected = socket.onCallRejectedHandler;
+    _prevOnCallEnded = socket.onCallEndedHandler;
+    _prevOnCallError = socket.onCallErrorHandler;
+    _prevOnSignalOffer = socket.onSignalOfferHandler;
+    _prevOnSignalAnswer = socket.onSignalAnswerHandler;
+    _prevOnSignalIce = socket.onSignalIceHandler;
+
     socket.onSignalAnswer = (data) async {
+      if (data['fromUserId']?.toString() != widget.targetUserId) return;
       await _setRemoteDescriptionAndFlush(
         RTCSessionDescription(data['sdp'], data['type']),
       );
     };
 
     socket.onSignalIce = (data) async {
+      if (data['fromUserId']?.toString() != widget.targetUserId) return;
       final candidate = RTCIceCandidate(
         data['candidate']['candidate'],
         data['candidate']['sdpMid'],
@@ -101,30 +130,65 @@ class _CallScreenState extends State<CallScreen> {
       await _pc!.addCandidate(candidate);
     };
 
-    socket.onCallAccepted = (_) => _createOffer();
-    socket.onCallRejected = (_) => _endCall();
-    socket.onCallEnded = (_) => _endCall();
+    socket.onCallAccepted = (data) {
+      if (data['fromUserId']?.toString() != widget.targetUserId) return;
+      _accepted = true;
+      _outgoingTimeoutTimer?.cancel();
+      _createOffer();
+    };
+    socket.onCallRejected = (data) {
+      if (data['fromUserId']?.toString() != widget.targetUserId) return;
+      _finishCall(localHangup: false);
+    };
+    socket.onCallEnded = (data) {
+      if (data['fromUserId']?.toString() != widget.targetUserId) return;
+      _finishCall(localHangup: false);
+    };
+    socket.onCallError = (data) {
+      if (!mounted) return;
+      final message = (data is Map ? data['message'] : null)?.toString() ?? 'Call failed';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      _finishCall(localHangup: false);
+    };
 
     socket.onSignalOffer = (data) async {
+      if (data['fromUserId']?.toString() != widget.targetUserId) return;
       await _setRemoteDescriptionAndFlush(
         RTCSessionDescription(data['sdp'], data['type']),
       );
       final answer = await _pc!.createAnswer();
       await _pc!.setLocalDescription(answer);
       socket.emit('signal:answer', {
-        'targetUserId': widget.targetUserId,
+        'targetUserId': data['fromUserId'] ?? widget.targetUserId,
         'sdp': answer.sdp,
         'type': answer.type,
       });
     };
 
-    // Send call request
-    socket.emit('call:request', {
-      'targetUserId': widget.targetUserId,
-      'isVideo': widget.isVideo,
-    });
+    if (!widget.isIncoming) {
+      socket.emit('call:request', {
+        'targetUserId': widget.targetUserId,
+        'isVideo': widget.isVideo,
+      });
 
-    setState(() {});
+      _outgoingTimeoutTimer?.cancel();
+      _outgoingTimeoutTimer = Timer(const Duration(seconds: 30), () {
+        if (!mounted || _connected || _accepted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('呼叫超时，对方未接听')),
+        );
+        _finishCall(localHangup: true);
+      });
+    }
+
+      setState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('通话初始化失败: $e')),
+      );
+      _finishCall(localHangup: false);
+    }
   }
 
   Future<void> _setRemoteDescriptionAndFlush(RTCSessionDescription desc) async {
@@ -139,6 +203,8 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   Future<void> _createOffer() async {
+    if (_offerCreated) return;
+    _offerCreated = true;
     final offer = await _pc!.createOffer();
     await _pc!.setLocalDescription(offer);
     context.read<SocketProvider>().emit('signal:offer', {
@@ -148,12 +214,19 @@ class _CallScreenState extends State<CallScreen> {
     });
   }
 
-  void _endCall() {
-    context.read<SocketProvider>().emit('call:end', {
-      'targetUserId': widget.targetUserId,
-    });
+  void _finishCall({required bool localHangup}) {
+    _outgoingTimeoutTimer?.cancel();
+    if (localHangup) {
+      context.read<SocketProvider>().emit('call:end', {
+        'targetUserId': widget.targetUserId,
+      });
+    }
     _cleanup();
     if (mounted) Navigator.pop(context);
+  }
+
+  void _endCall() {
+    _finishCall(localHangup: true);
   }
 
   void _toggleMute() {
@@ -163,20 +236,23 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   void _toggleSpeaker() {
-    setState(() => _speakerOn = !_speakerOn);
-    // Platform-specific speaker toggle would go here
+    final nextSpeakerOn = !_speakerOn;
+    Helper.setSpeakerphoneOn(nextSpeakerOn);
+    setState(() => _speakerOn = nextSpeakerOn);
   }
 
   void _cleanup() {
     if (_cleaned) return;
     _cleaned = true;
+    _outgoingTimeoutTimer?.cancel();
     final socket = context.read<SocketProvider>();
-    socket.onCallAccepted = null;
-    socket.onCallRejected = null;
-    socket.onCallEnded = null;
-    socket.onSignalOffer = null;
-    socket.onSignalAnswer = null;
-    socket.onSignalIce = null;
+    socket.onCallAccepted = _prevOnCallAccepted;
+    socket.onCallRejected = _prevOnCallRejected;
+    socket.onCallEnded = _prevOnCallEnded;
+    socket.onCallError = _prevOnCallError;
+    socket.onSignalOffer = _prevOnSignalOffer;
+    socket.onSignalAnswer = _prevOnSignalAnswer;
+    socket.onSignalIce = _prevOnSignalIce;
     _localStream?.dispose();
     _pc?.close();
     _localRenderer.dispose();
