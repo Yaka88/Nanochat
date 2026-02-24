@@ -35,17 +35,23 @@ services:
 
   coturn:
     image: coturn/coturn:latest
-    container_name: nanochat-stun
+    container_name: nanochat-turn
     restart: unless-stopped
     network_mode: host
     command:
       - "-n"
       - "--log-file=stdout"
       - "--no-cli"
-      - "--stun-only"
       - "--listening-port=3478"
       - "--fingerprint"
+      - "--lt-cred-mech"
+      - "--use-auth-secret"
+      - "--static-auth-secret=${TURN_SECRET:-nanochat-turn-secret}"
       - "--realm=chat.bluelaser.cn"
+      - "--total-quota=100"
+      - "--bps-capacity=0"
+      - "--no-multicast-peers"
+      - "--no-stdout-log"
 
 volumes:
   postgres_data:

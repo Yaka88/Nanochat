@@ -21,7 +21,12 @@ export const config = {
 
     // App
     appUrl: process.env.APP_URL || 'https://chat.bluelaser.cn',
-    stunServer: process.env.STUN_SERVER || 'chat.bluelaser.cn:3478',
+
+    // TURN / STUN
+    turnHost: process.env.TURN_HOST || 'chat.bluelaser.cn',
+    turnPort: parseInt(process.env.TURN_PORT || '3478'),
+    turnSecret: process.env.TURN_SECRET || 'nanochat-turn-secret',
+    turnCredentialTTL: parseInt(process.env.TURN_CREDENTIAL_TTL || '86400'), // 24h
 
     // Admin
     adminUsername: process.env.ADMIN_USERNAME || 'admin',

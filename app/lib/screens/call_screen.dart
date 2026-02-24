@@ -69,13 +69,12 @@ class _CallScreenState extends State<CallScreen> {
     });
     _localRenderer.srcObject = _localStream;
 
-    // Create peer connection
+    // Fetch TURN/STUN ICE servers from server
+    final iceServers = await _socketProvider.getIceServers();
+
+    // Create peer connection with TURN support
     _pc = await createPeerConnection({
-      'iceServers': [
-        {'urls': 'stun:chat.bluelaser.cn:3478'},
-        {'urls': 'stun:stun.l.google.com:19302'},
-        {'urls': 'stun:stun1.l.google.com:19302'},
-      ],
+      'iceServers': iceServers,
     });
 
     await Helper.setSpeakerphoneOn(true);

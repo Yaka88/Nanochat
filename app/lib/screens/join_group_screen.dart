@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../core/api.dart';
 import '../core/auth_provider.dart';
+import '../core/socket_provider.dart';
 import '../core/storage.dart';
 import '../core/l10n.dart';
 
@@ -57,6 +58,9 @@ class _JoinGroupScreenState extends State<JoinGroupScreen> {
 
       if (mounted) {
         await context.read<AuthProvider>().init();
+        // Connect socket and notify about the new group
+        final socket = context.read<SocketProvider>();
+        await socket.reconnect();
         Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
       }
     } catch (e) {

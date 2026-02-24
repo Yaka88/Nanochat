@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'storage.dart';
@@ -5,8 +6,11 @@ import 'storage.dart';
 class SocketProvider extends ChangeNotifier {
   io.Socket? _socket;
   final Map<String, bool> _onlineStatus = {};
+  List<Map<String, dynamic>>? _cachedIceServers;
 
   bool isUserOnline(String userId) => _onlineStatus[userId] ?? false;
+
+  bool get isConnected => _socket?.connected == true;
 
   Future<void> connect() async {
     if (_socket?.connected == true) return;
@@ -17,6 +21,7 @@ class SocketProvider extends ChangeNotifier {
     }
 
     _onlineStatus.clear();
+    _cachedIceServers = null;
 
     final token = await LocalStorage.getToken();
     if (token == null) return;
@@ -34,7 +39,11 @@ class SocketProvider extends ChangeNotifier {
           .build(),
     );
 
-    _socket!.onConnect((_) => debugPrint('[WS] Connected'));
+    _socket!.onConnect((_) {
+      debugPrint('[WS] Connected');
+      // Refresh group rooms on every reconnect so presence stays in sync
+      _socket!.emit('groups:refresh');
+    });
     _socket!.onDisconnect((_) => debugPrint('[WS] Disconnected'));
 
     _socket!.on('presence:snapshot', (data) {
@@ -97,6 +106,82 @@ class SocketProvider extends ChangeNotifier {
     _socket?.dispose();
     _socket = null;
     _onlineStatus.clear();
+    _cachedIceServers = null;
+  }
+
+  /// Force a full reconnection (dispose old socket, create new one).
+  /// Use after login, registration, or group join to ensure fresh state.
+  Future<void> reconnect() async {
+    disconnect();
+    await connect();
+  }
+
+  /// Tell the server we joined a new group so it adds us to the room.
+  void notifyGroupJoined(String groupId) {
+    _socket?.emit('group:joined', {'groupId': groupId});
+  }
+
+  /// Ask the server to refresh all group rooms (e.g., after app resume).
+  void refreshGroups() {
+    _socket?.emit('groups:refresh');
+  }
+
+  /// Fetch TURN/STUN ICE servers from the server.
+  /// Returns cached value if available; otherwise queries via socket ack.
+  Future<List<Map<String, dynamic>>> getIceServers() async {
+    if (_cachedIceServers != null) return _cachedIceServers!;
+
+    final completer = Completer<List<Map<String, dynamic>>>();
+
+    if (_socket?.connected != true) {
+      // Fallback: public STUN only
+      return [
+        {'urls': 'stun:chat.bluelaser.cn:3478'},
+        {'urls': 'stun:stun.l.google.com:19302'},
+      ];
+    }
+
+    // Use ack callback
+    _socket!.emitWithAck('get:ice-servers', {}, ack: (data) {
+      if (data is Map && data['iceServers'] is List) {
+        final servers = (data['iceServers'] as List)
+            .map((s) => Map<String, dynamic>.from(s as Map))
+            .toList();
+        _cachedIceServers = servers;
+        if (!completer.isCompleted) completer.complete(servers);
+      } else {
+        if (!completer.isCompleted) {
+          completer.complete([
+            {'urls': 'stun:chat.bluelaser.cn:3478'},
+            {'urls': 'stun:stun.l.google.com:19302'},
+          ]);
+        }
+      }
+    });
+
+    // Also listen for non-ack response as fallback
+    _socket!.once('ice-servers', (data) {
+      if (completer.isCompleted) return;
+      if (data is Map && data['iceServers'] is List) {
+        final servers = (data['iceServers'] as List)
+            .map((s) => Map<String, dynamic>.from(s as Map))
+            .toList();
+        _cachedIceServers = servers;
+        completer.complete(servers);
+      }
+    });
+
+    // Timeout after 5s
+    Future.delayed(const Duration(seconds: 5), () {
+      if (!completer.isCompleted) {
+        completer.complete([
+          {'urls': 'stun:chat.bluelaser.cn:3478'},
+          {'urls': 'stun:stun.l.google.com:19302'},
+        ]);
+      }
+    });
+
+    return completer.future;
   }
 
   void emit(String event, dynamic data) => _socket?.emit(event, data);

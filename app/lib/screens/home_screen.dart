@@ -138,7 +138,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final socket = context.read<SocketProvider>();
     if (state == AppLifecycleState.resumed) {
-      socket.connect();
+      if (socket.isConnected) {
+        // Already connected: just refresh group rooms and members
+        socket.refreshGroups();
+      } else {
+        socket.connect();
+      }
       _loadMembers();
     }
   }
@@ -162,7 +167,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       // Connect WebSocket early so presence:snapshot arrives before UI renders
       if (mounted) {
-        context.read<SocketProvider>().connect();
+        final socket = context.read<SocketProvider>();
+        if (socket.isConnected) {
+          socket.refreshGroups();
+        } else {
+          await socket.connect();
+        }
       }
 
       if (current != null) {
