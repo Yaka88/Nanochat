@@ -41,7 +41,6 @@ services:
     command:
       - "-c"
       - "/etc/coturn/turnserver.conf"
-      - "-n"
     volumes:
       - ./turnserver.conf:/etc/coturn/turnserver.conf
 
