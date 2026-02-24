@@ -44,11 +44,12 @@ services:
       - "--no-cli"
       - "--no-tls"
       - "--no-dtls"
+      - "--stun-only"
+      - "--listening-ip=0.0.0.0"
+      - "--listening-ipv6=::"
       - "--listening-port=3478"
       - "--fingerprint"
-      - "--lt-cred-mech"
       - "--realm=chat.bluelaser.cn"
-      - "--user=nanochat:nanochat123"
 
 volumes:
   postgres_data:

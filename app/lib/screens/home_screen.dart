@@ -51,8 +51,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _startIncomingRing() {
     _stopIncomingRing();
     SystemSound.play(SystemSoundType.alert);
+    HapticFeedback.heavyImpact();
     _ringTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       SystemSound.play(SystemSoundType.alert);
+      HapticFeedback.heavyImpact();
     });
   }
 

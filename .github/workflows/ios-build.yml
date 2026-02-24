@@ -1,11 +1,6 @@
 name: iOS Build & Test
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'app/**'
   workflow_dispatch:
 
 jobs:
