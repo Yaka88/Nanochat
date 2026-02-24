@@ -43,15 +43,18 @@ services:
       - "--log-file=stdout"
       - "--no-cli"
       - "--listening-port=3478"
+      - "--listening-ip=${TURN_LISTEN_IP:-0.0.0.0}"
+      - "--relay-ip=${TURN_LISTEN_IP:-0.0.0.0}"
+      - "--external-ip=${TURN_EXTERNAL_IP}"
       - "--fingerprint"
-      - "--lt-cred-mech"
       - "--use-auth-secret"
       - "--static-auth-secret=${TURN_SECRET:-nanochat-turn-secret}"
-      - "--realm=chat.bluelaser.cn"
+      - "--realm=${TURN_HOST:-chat.bluelaser.cn}"
       - "--total-quota=100"
       - "--bps-capacity=0"
       - "--no-multicast-peers"
-      - "--no-stdout-log"
+      - "--no-tls"
+      - "--no-dtls"
 
 volumes:
   postgres_data:

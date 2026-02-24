@@ -61,6 +61,8 @@ nano .env
 | `APP_URL` | 公开访问地址 | `https://chat.bluelaser.cn` |
 | `TURN_HOST` | TURN 服务器域名/IP（须与客户端可达的地址一致） | `chat.bluelaser.cn` |
 | `TURN_SECRET` | coturn 共享密钥（服务端和 coturn 必须一致） | `openssl rand -hex 16` 生成 |
+| `TURN_EXTERNAL_IP` | **VPS 公网 IP**（云服务器必填） | `curl ifconfig.me` 获取 |
+| `TURN_LISTEN_IP` | **VPS 内网 IP**（云服务器必填） | `hostname -I \| awk '{print $1}'` 获取 |
 | `ADMIN_PASSWORD` | 管理后台密码，**必须修改** | — |
 
 `.env` 完整示例：
@@ -84,10 +86,21 @@ TURN_HOST="chat.bluelaser.cn"
 TURN_PORT=3478
 TURN_SECRET="替换为随机字符串"
 TURN_CREDENTIAL_TTL=86400
+# 云服务器必填（公网IP 和 内网IP）
+TURN_EXTERNAL_IP="1.2.3.4"
+TURN_LISTEN_IP="10.1.0.4"
 
 ADMIN_USERNAME="admin"
 ADMIN_PASSWORD="替换为强密码"
 ```
+
+> **如何获取 IP？** 在 VPS 上执行：
+> ```bash
+> # 公网 IP
+> curl ifconfig.me
+> # 内网 IP
+> hostname -I | awk '{print $1}'
+> ```
 
 ### 第三步：启动服务
 ```bash
@@ -137,6 +150,10 @@ git pull
 
 # 2. 更新 .env —— 添加 TURN 相关变量（如已有则跳过）
 #    删除旧的 STUN_SERVER 变量（不再使用）
+#    获取 IP 地址:
+echo "公网IP: $(curl -s ifconfig.me)"
+echo "内网IP: $(hostname -I | awk '{print $1}')"
+
 cat >> .env << 'EOF'
 
 # TURN / STUN (coturn) — 新增
@@ -144,6 +161,8 @@ TURN_HOST="chat.bluelaser.cn"
 TURN_PORT=3478
 TURN_SECRET="替换为你的随机密钥"
 TURN_CREDENTIAL_TTL=86400
+TURN_EXTERNAL_IP="替换为公网IP"
+TURN_LISTEN_IP="替换为内网IP"
 EOF
 
 # 3. 重新构建并重启所有容器
