@@ -40,6 +40,8 @@ class SocketProvider extends ChangeNotifier {
     _socket!.on('presence:snapshot', (data) {
       final ids = (data is Map ? data['onlineUserIds'] : null) as List<dynamic>?;
       if (ids == null) return;
+      // Clear stale status before applying the authoritative snapshot
+      _onlineStatus.clear();
       for (final id in ids) {
         final userId = id?.toString();
         if (userId == null || userId.isEmpty) continue;

@@ -85,7 +85,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             onAccept: () {
               _incomingHandled = true;
               _stopIncomingRing();
-              socket.emit('call:accept', {'targetUserId': callerUserId});
+              // call:accept is emitted by CallScreen after media init completes
               Navigator.of(context).pop();
               _incomingDialogOpen = false;
               _pendingCallerUserId = null;
@@ -158,14 +158,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               orElse: () => groups.first);
       setState(() => _currentGroup = current);
 
+      // Connect WebSocket early so presence:snapshot arrives before UI renders
+      if (mounted) {
+        context.read<SocketProvider>().connect();
+      }
+
       if (current != null) {
         await LocalStorage.setLastGroupId(current.id);
         await _loadMembers();
-      }
-
-      // Connect WebSocket
-      if (mounted) {
-        context.read<SocketProvider>().connect();
       }
     } catch (e) {
       debugPrint('Load error: $e');
@@ -287,7 +287,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       }
 
                       final m = _members[i];
-                      final online = socket.isUserOnline(m.userId) || m.isOnline;
+                      final online = socket.isUserOnline(m.userId);
                       return MemberCard(
                         member: m,
                         isOnline: online,
