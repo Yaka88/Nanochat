@@ -89,8 +89,8 @@ async function loadGroupIds(userId: string): Promise<string[]> {
 // ========================================
 
 export function setupWebSocket(io: Server) {
-    prisma.user.updateMany({ data: { isOnline: false } }).catch((error) => {
-        console.error('Failed to reset online status on startup:', error);
+    prisma.user.updateMany({ data: { isOnline: true } }).catch((error) => {
+        console.error('Failed to set all users online on startup:', error);
     });
 
     // Authentication middleware
@@ -147,10 +147,18 @@ export function setupWebSocket(io: Server) {
             });
         }
 
-        // Send current presence snapshot to the newly connected user
-        const onlineUserIds = Array.from(connectedUsers.values())
-            .filter((u) => u.userId !== userId && u.groupIds.some((gid) => groupIds.includes(gid)))
-            .map((u) => u.userId);
+        // Send current presence snapshot to the newly connected user.
+        // Query from DB because users stay online even without a socket.
+        const groupMates = await prisma.groupMember.findMany({
+            where: {
+                groupId: { in: groupIds },
+                userId: { not: userId },
+                user: { isOnline: true },
+            },
+            select: { userId: true },
+            distinct: ['userId'],
+        });
+        const onlineUserIds = groupMates.map((m) => m.userId);
 
         socket.emit('presence:snapshot', { onlineUserIds });
 
@@ -198,11 +206,16 @@ export function setupWebSocket(io: Server) {
             // Broadcast online to the newly joined group
             socket.to(`group:${gid}`).emit('user:online', { userId, groupId: gid });
 
-            // Send presence snapshot for this group's members
-            const groupOnlineIds = Array.from(connectedUsers.values())
-                .filter((u) => u.userId !== userId && u.groupIds.includes(gid))
-                .map((u) => u.userId);
-            socket.emit('presence:snapshot', { onlineUserIds: groupOnlineIds });
+            // Send presence snapshot for this group's members (from DB)
+            const groupMembers = await prisma.groupMember.findMany({
+                where: {
+                    groupId: gid,
+                    userId: { not: userId },
+                    user: { isOnline: true },
+                },
+                select: { userId: true },
+            });
+            socket.emit('presence:snapshot', { onlineUserIds: groupMembers.map((m) => m.userId) });
         });
 
         // Refresh all group rooms (e.g., after app resume)
@@ -229,11 +242,17 @@ export function setupWebSocket(io: Server) {
                 entry.groupIds = groupIds;
             }
 
-            // Send full presence snapshot
-            const allOnlineIds = Array.from(connectedUsers.values())
-                .filter((u) => u.userId !== userId && u.groupIds.some((gid) => groupIds.includes(gid)))
-                .map((u) => u.userId);
-            socket.emit('presence:snapshot', { onlineUserIds: allOnlineIds });
+            // Send full presence snapshot (from DB)
+            const allGroupMates = await prisma.groupMember.findMany({
+                where: {
+                    groupId: { in: groupIds },
+                    userId: { not: userId },
+                    user: { isOnline: true },
+                },
+                select: { userId: true },
+                distinct: ['userId'],
+            });
+            socket.emit('presence:snapshot', { onlineUserIds: allGroupMates.map((m) => m.userId) });
         });
 
         // ========================================
@@ -331,22 +350,19 @@ export function setupWebSocket(io: Server) {
         });
 
         // ========================================
-        // Disconnect Handling
+        // Explicit Logout (only way to go offline)
         // ========================================
 
-        socket.on('disconnect', async () => {
-            console.log(`🔌 User disconnected: ${userId}`);
-
-            // Only clean up if this socket is still the active one for this user
-            const current = connectedUsers.get(userId);
-            if (current?.socket.id !== socket.id) {
-                return;
-            }
+        socket.on('user:logout', async () => {
+            console.log(`🔓 User explicitly logged out: ${userId}`);
 
             // Remove from connected users
-            connectedUsers.delete(userId);
+            const current = connectedUsers.get(userId);
+            if (current?.socket.id === socket.id) {
+                connectedUsers.delete(userId);
+            }
 
-            // Update user offline status
+            // Set user offline only on explicit logout
             try {
                 await prisma.user.update({
                     where: { id: userId },
@@ -356,13 +372,46 @@ export function setupWebSocket(io: Server) {
                 console.error(`Failed to set offline status for user ${userId}:`, error);
             }
 
-            // Broadcast offline status using current groupIds (may have been updated)
+            // Broadcast offline status
             for (const groupId of groupIds) {
                 socket.to(`group:${groupId}`).emit('user:offline', {
                     userId,
                     groupId,
                 });
             }
+
+            socket.disconnect(true);
+        });
+
+        // ========================================
+        // Disconnect Handling
+        // ========================================
+
+        socket.on('disconnect', async () => {
+            console.log(`🔌 User disconnected: ${userId}`);
+
+            // Only clean up in-memory entry if this socket is still the active one
+            const current = connectedUsers.get(userId);
+            if (current?.socket.id !== socket.id) {
+                return;
+            }
+
+            // Remove from connected users map but keep the user marked as ONLINE
+            // in the database. Users stay online unless they explicitly log out
+            // or account is deleted.
+            connectedUsers.delete(userId);
+
+            // Update lastOnlineAt timestamp but do NOT set isOnline to false
+            try {
+                await prisma.user.update({
+                    where: { id: userId },
+                    data: { lastOnlineAt: new Date() },
+                });
+            } catch (error) {
+                console.error(`Failed to update lastOnlineAt for user ${userId}:`, error);
+            }
+
+            // Do NOT broadcast user:offline — user remains "online"
         });
     });
 }

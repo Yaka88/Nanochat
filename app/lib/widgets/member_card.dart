@@ -3,7 +3,7 @@ import '../app/theme.dart';
 import '../core/l10n.dart';
 import '../models/group.dart';
 
-/// Family member card: Avatar | Nickname+Status | Video | Voice | Message
+/// Family member card: Avatar | Nickname | Video | Voice | Message
 class MemberCard extends StatelessWidget {
   final GroupMember member;
   final bool isOnline;
@@ -31,37 +31,12 @@ class MemberCard extends StatelessWidget {
             // Large Avatar
             _Avatar(avatarUrl: member.avatarUrl, isOnline: isOnline),
             const SizedBox(width: 16),
-            // Nickname + online status
+            // Nickname
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    member.nameInGroup,
-                    style: const TextStyle(
-                        fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(Icons.circle,
-                          size: 12,
-                          color: isOnline
-                              ? AppTheme.onlineGreen
-                              : AppTheme.offlineGrey),
-                      const SizedBox(width: 6),
-                      Text(
-                        isOnline ? t('online') : t('offline'),
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: isOnline
-                              ? AppTheme.onlineGreen
-                              : AppTheme.offlineGrey,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+              child: Text(
+                member.nameInGroup,
+                style: const TextStyle(
+                    fontSize: 24, fontWeight: FontWeight.bold),
               ),
             ),
             // Action buttons: Video | Voice | Message

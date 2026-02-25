@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../core/api.dart';
 import '../core/auth_provider.dart';
+import '../core/permissions.dart';
 import '../core/socket_provider.dart';
 import '../core/storage.dart';
 import '../core/l10n.dart';
@@ -215,7 +216,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await _loadMembers();
   }
 
-  void _onVideoCall(GroupMember m) {
+  void _onVideoCall(GroupMember m) async {
+    final granted = await Permissions.requestCallPermissions(context, isVideo: true);
+    if (!granted || !mounted) return;
     Navigator.pushNamed(context, '/call', arguments: {
       'userId': m.userId,
       'name': m.nameInGroup,
@@ -224,7 +227,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
   }
 
-  void _onVoiceCall(GroupMember m) {
+  void _onVoiceCall(GroupMember m) async {
+    final granted = await Permissions.requestCallPermissions(context, isVideo: false);
+    if (!granted || !mounted) return;
     Navigator.pushNamed(context, '/call', arguments: {
       'userId': m.userId,
       'name': m.nameInGroup,

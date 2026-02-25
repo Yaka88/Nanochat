@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../core/l10n.dart';
+import '../core/permissions.dart';
 
 /// QR code scanner for joining a family group
 class ScanScreen extends StatefulWidget {
@@ -13,6 +14,19 @@ class ScanScreen extends StatefulWidget {
 
 class _ScanScreenState extends State<ScanScreen> {
   bool _scanned = false;
+  bool _permissionGranted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPermission();
+  }
+
+  Future<void> _checkPermission() async {
+    final granted = await Permissions.requestCameraPermission(context);
+    if (mounted) setState(() => _permissionGranted = granted);
+    if (!granted && mounted) Navigator.pop(context);
+  }
 
   void _onDetect(BarcodeCapture capture) {
     if (_scanned) return;
@@ -47,7 +61,9 @@ class _ScanScreenState extends State<ScanScreen> {
     final t = (String k) => AppL10n.t(context, k);
     return Scaffold(
       appBar: AppBar(title: Text(t('scan_join'))),
-      body: Stack(
+      body: !_permissionGranted
+          ? const Center(child: CircularProgressIndicator())
+          : Stack(
         children: [
           MobileScanner(onDetect: _onDetect),
           Center(

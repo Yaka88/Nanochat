@@ -109,6 +109,11 @@ class SocketProvider extends ChangeNotifier {
     _cachedIceServers = null;
   }
 
+  /// Emit explicit logout event so the server marks this user offline.
+  void emitLogout() {
+    _socket?.emit('user:logout');
+  }
+
   /// Force a full reconnection (dispose old socket, create new one).
   /// Use after login, registration, or group join to ensure fresh state.
   Future<void> reconnect() async {

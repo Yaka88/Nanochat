@@ -24,6 +24,8 @@ dependencies:
   # Audio recording
   record: ^6.1.1
   audioplayers: ^6.0.0
+  # Permissions
+  permission_handler: ^11.3.0
   # Utils
   uuid: ^4.3.3
   intl: ^0.20.2

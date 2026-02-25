@@ -64,7 +64,12 @@ class _CallScreenState extends State<CallScreen> {
     _localStream = await navigator.mediaDevices.getUserMedia({
       'audio': true,
       'video': widget.isVideo
-          ? {'facingMode': 'user', 'width': 640, 'height': 480}
+          ? {
+              'facingMode': 'user',
+              'width': {'ideal': 1280},
+              'height': {'ideal': 720},
+              'frameRate': {'ideal': 30},
+            }
           : false,
     });
     _localRenderer.srcObject = _localStream;
@@ -75,7 +80,26 @@ class _CallScreenState extends State<CallScreen> {
     // Create peer connection with TURN support
     _pc = await createPeerConnection({
       'iceServers': iceServers,
+      'sdpSemantics': 'unified-plan',
     });
+
+    // Set higher bitrate for video
+    if (widget.isVideo) {
+      final senders = await _pc!.getSenders();
+      for (final sender in senders) {
+        if (sender.track?.kind == 'video') {
+          final params = sender.parameters;
+          if (params.encodings == null || params.encodings!.isEmpty) {
+            params.encodings = [RTCRtpEncoding()];
+          }
+          for (final encoding in params.encodings!) {
+            encoding.maxBitrate = 2000000; // 2 Mbps
+            encoding.minBitrate = 500000;  // 500 kbps
+          }
+          await sender.setParameters(params);
+        }
+      }
+    }
 
     await Helper.setSpeakerphoneOn(true);
 
@@ -159,6 +183,9 @@ class _CallScreenState extends State<CallScreen> {
         RTCSessionDescription(data['sdp'], data['type']),
       );
       final answer = await _pc!.createAnswer();
+      if (widget.isVideo) {
+        answer.sdp = _setVideoBandwidth(answer.sdp!, 2000);
+      }
       await _pc!.setLocalDescription(answer);
       _socketProvider.emit('signal:answer', {
         'targetUserId': data['fromUserId'] ?? widget.targetUserId,
@@ -207,6 +234,8 @@ class _CallScreenState extends State<CallScreen> {
   Future<void> _setRemoteDescriptionAndFlush(RTCSessionDescription desc) async {
     await _pc!.setRemoteDescription(desc);
     _remoteDescriptionSet = true;
+    // Apply bitrate constraints to video sender after remote description is set
+    if (widget.isVideo) await _applyVideoBitrate();
     if (_pendingRemoteCandidates.isNotEmpty) {
       for (final candidate in _pendingRemoteCandidates) {
         await _pc!.addCandidate(candidate);
@@ -215,10 +244,54 @@ class _CallScreenState extends State<CallScreen> {
     }
   }
 
+  /// Apply max bitrate to the video sender via RTCRtpSender parameters.
+  Future<void> _applyVideoBitrate() async {
+    if (_pc == null) return;
+    final senders = await _pc!.getSenders();
+    for (final sender in senders) {
+      if (sender.track?.kind == 'video') {
+        final params = sender.parameters;
+        if (params.encodings == null || params.encodings!.isEmpty) {
+          params.encodings = [RTCRtpEncoding()];
+        }
+        for (final encoding in params.encodings!) {
+          encoding.maxBitrate = 2000000; // 2 Mbps
+          encoding.minBitrate = 500000;  // 500 kbps
+        }
+        await sender.setParameters(params);
+      }
+    }
+  }
+
+  /// Set bandwidth in SDP for video media section (b=AS:xxx).
+  String _setVideoBandwidth(String sdp, int bandwidthKbps) {
+    final lines = sdp.split('\n');
+    final result = <String>[];
+    bool inVideo = false;
+    for (final line in lines) {
+      if (line.startsWith('m=video')) {
+        inVideo = true;
+      } else if (line.startsWith('m=')) {
+        inVideo = false;
+      }
+      // Remove existing bandwidth line in video section
+      if (inVideo && line.startsWith('b=AS:')) continue;
+      result.add(line);
+      // Insert bandwidth after c= line in video section
+      if (inVideo && line.startsWith('c=')) {
+        result.add('b=AS:$bandwidthKbps');
+      }
+    }
+    return result.join('\n');
+  }
+
   Future<void> _createOffer() async {
     if (_offerCreated || _pc == null) return;
     _offerCreated = true;
     final offer = await _pc!.createOffer();
+    if (widget.isVideo) {
+      offer.sdp = _setVideoBandwidth(offer.sdp!, 2000);
+    }
     await _pc!.setLocalDescription(offer);
     _socketProvider.emit('signal:offer', {
       'targetUserId': widget.targetUserId,

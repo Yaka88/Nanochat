@@ -44,7 +44,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       return;
     }
-    context.read<SocketProvider>().disconnect();
+    // Emit explicit logout so server marks us offline
+    final socket = context.read<SocketProvider>();
+    socket.emitLogout();
+    await Future.delayed(const Duration(milliseconds: 300));
+    socket.disconnect();
     await auth.logout();
     if (mounted) {
       Navigator.pushNamedAndRemoveUntil(context, '/welcome', (_) => false);
