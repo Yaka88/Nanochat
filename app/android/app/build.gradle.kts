@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.example.nanochat"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 35
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -21,13 +21,13 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.nanochat"
+        applicationId = "cn.bluelaser.nanochat"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        minSdk = 24
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.1"
     }
 
     buildTypes {
