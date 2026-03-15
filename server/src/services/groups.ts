@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 import { prisma } from '../db.js';
 import { config } from '../config.js';
+import { isUserOnline } from '../websocket/handler.js';
 
 interface CreateGroupInput {
     name: string;
@@ -36,8 +37,15 @@ async function getSystemConfig(key: string): Promise<string> {
  * Throws an error if verification fails.
  */
 export function verifyInvitePayload(data: InviteVerifyInput): void {
+    const now = Date.now();
+
+    // Allow a small clock skew tolerance for client/server time drift.
+    if (data.timestamp > now + 5 * 60 * 1000) {
+        throw new Error('Invalid invite timestamp');
+    }
+
     // Check 24-hour expiry
-    if (Date.now() - data.timestamp > INVITE_EXPIRY_MS) {
+    if (now - data.timestamp > INVITE_EXPIRY_MS) {
         throw new Error('Invite QR code has expired (valid for 24 hours)');
     }
 
@@ -55,7 +63,13 @@ export function verifyInvitePayload(data: InviteVerifyInput): void {
     hmac.update(JSON.stringify(payload));
     const expectedSignature = hmac.digest('hex');
 
-    if (expectedSignature !== data.signature) {
+    const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+    const providedBuffer = Buffer.from(data.signature, 'hex');
+
+    if (
+        expectedBuffer.length !== providedBuffer.length ||
+        !crypto.timingSafeEqual(expectedBuffer, providedBuffer)
+    ) {
         throw new Error('Invalid invite QR code');
     }
 }
@@ -227,7 +241,8 @@ export async function getGroupMembers(groupId: string, userId: string) {
         nameInGroup: m.nameInGroup,
         nickname: m.user.nickname,
         avatarUrl: m.user.avatarUrl,
-        isOnline: m.user.isOnline,
+        // Use real-time socket connection state instead of potentially stale DB field
+        isOnline: isUserOnline(m.user.id),
         lastOnlineAt: m.user.lastOnlineAt,
         joinedAt: m.joinedAt,
     }));

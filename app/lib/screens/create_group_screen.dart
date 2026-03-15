@@ -18,6 +18,12 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
   bool _loading = false;
   String? _error;
 
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _create() async {
     final auth = context.read<AuthProvider>();
     if (auth.isHost && !(auth.user?.emailVerified ?? false)) {

@@ -10,9 +10,11 @@ import '../core/permissions.dart';
 import '../core/socket_provider.dart';
 import '../core/storage.dart';
 import '../core/l10n.dart';
-import '../models/group.dart';
 import '../widgets/incoming_call_dialog.dart';
 import '../widgets/member_card.dart';
+import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
+import 'package:flutter_callkit_incoming/entities/entities.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -29,7 +31,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Timer? _ringTimer;
   bool _incomingDialogOpen = false;
   String? _pendingCallerUserId;
-  bool _incomingHandled = false;
+  StreamSubscription<dynamic>? _callkitEventSub;
+  StreamSubscription<dynamic>? _callRequestSub;
+  StreamSubscription<dynamic>? _callEndedSub;
+  StreamSubscription<dynamic>? _forceLogoutSub;
+  // Track callers who cancelled before we could show the dialog
+  final Set<String> _cancelledCallers = {};
 
   @override
   void initState() {
@@ -43,18 +50,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _stopIncomingRing();
-    final socket = context.read<SocketProvider>();
-    socket.onCallRequest = null;
-    socket.onCallEnded = null;
+    _callRequestSub?.cancel();
+    _callEndedSub?.cancel();
+    _forceLogoutSub?.cancel();
     super.dispose();
   }
 
   void _startIncomingRing() {
     _stopIncomingRing();
-    SystemSound.play(SystemSoundType.alert);
+    FlutterRingtonePlayer().playRingtone();
     HapticFeedback.heavyImpact();
     _ringTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      SystemSound.play(SystemSoundType.alert);
       HapticFeedback.heavyImpact();
     });
   }
@@ -62,24 +68,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void _stopIncomingRing() {
     _ringTimer?.cancel();
     _ringTimer = null;
+    FlutterRingtonePlayer().stop();
   }
 
   void _setupSocketHandlers() {
     final socket = context.read<SocketProvider>();
-    socket.onCallRequest = (data) {
+    _callRequestSub?.cancel();
+    _callEndedSub?.cancel();
+    _forceLogoutSub?.cancel();
+
+    _callRequestSub = socket.onCallRequestStream.listen((data) {
       if (!mounted) return;
       if (_incomingDialogOpen) return;
-      final callerName = (data['callerName'] ?? data['name'] ?? 'Unknown') as String;
-      final callerUserId = (data['callerUserId'] ?? data['userId'] ?? '') as String;
-      final isVideo = (data['isVideo'] ?? true) as bool;
+      final callerUserId = data['fromUserId']?.toString() ?? '';
+      final isVideo = data['isVideo'] == true || data['isVideo'] == 'true';
       if (callerUserId.isEmpty) return;
+
+      final callerName = _members.firstWhere(
+        (m) => m['userId'] == callerUserId,
+        orElse: () => {'nickname': 'Unknown'},
+      )['nickname'];
+
+      // If this caller already cancelled, don't show incoming dialog
+      if (_cancelledCallers.remove(callerUserId)) return;
 
       _incomingDialogOpen = true;
       _pendingCallerUserId = callerUserId;
       _incomingHandled = false;
       _startIncomingRing();
 
-      Navigator.of(context).push(
+      Navigator.of(context)
+          .push(
         MaterialPageRoute(
           fullscreenDialog: true,
           builder: (_) => IncomingCallDialog(
@@ -109,7 +128,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             },
           ),
         ),
-      ).then((_) {
+      )
+          .then((_) {
         if (!_incomingHandled && _pendingCallerUserId != null) {
           socket.emit('call:reject', {'targetUserId': _pendingCallerUserId});
         }
@@ -118,34 +138,53 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         _pendingCallerUserId = null;
         _incomingHandled = false;
       });
-    };
+    });
 
-    socket.onCallEnded = (data) {
+    _callEndedSub = socket.onCallEndedStream.listen((data) {
       final fromUserId = data['fromUserId']?.toString();
-      if (!_incomingDialogOpen || fromUserId == null) return;
-      if (fromUserId != _pendingCallerUserId) return;
+      if (fromUserId == null) return;
 
-      _incomingHandled = true;
-      _stopIncomingRing();
-      if (Navigator.of(context).canPop()) {
-        Navigator.of(context).pop();
+      // If the incoming dialog is open for this caller, dismiss it
+      if (_incomingDialogOpen && fromUserId == _pendingCallerUserId) {
+        _incomingHandled = true;
+        _stopIncomingRing();
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+        _incomingDialogOpen = false;
+        _pendingCallerUserId = null;
+        return;
       }
-      _incomingDialogOpen = false;
-      _pendingCallerUserId = null;
-    };
+
+      // If the dialog hasn't opened yet, record the cancellation
+      // so that when the dialog would show, we skip it.
+      _cancelledCallers.add(fromUserId);
+      // Auto-clean after 30 seconds
+      Future.delayed(const Duration(seconds: 30), () {
+        _cancelledCallers.remove(fromUserId);
+      });
+    });
+
+    _forceLogoutSub = socket.onForceLogoutStream.listen((data) async {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(data['message'] ?? '您的账号已在其他设备登录')),
+      );
+      await context.read<AuthProvider>().logout();
+    });
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    final socket = context.read<SocketProvider>();
     if (state == AppLifecycleState.resumed) {
-      if (socket.isConnected) {
-        // Already connected: just refresh group rooms and members
-        socket.refreshGroups();
-      } else {
-        socket.connect();
-      }
-      _loadMembers();
+      final socket = context.read<SocketProvider>();
+      // Always reconnect on resume to get a fresh socket + presence snapshot.
+      // The socket may report connected but be stale after a long background.
+      socket.reconnect().then((_) {
+        // Only load members after socket is connected so presence data
+        // doesn't race with API data.
+        _loadMembers();
+      });
     }
   }
 
@@ -153,9 +192,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     setState(() => _loading = true);
     try {
       final res = await Api.getGroups();
-      final groups = (res['groups'] as List)
-          .map((g) => Group.fromJson(g))
-          .toList();
+      final groups =
+          (res['groups'] as List).map((g) => Group.fromJson(g)).toList();
       setState(() => _groups = groups);
 
       // Pick last group or first
@@ -217,7 +255,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _onVideoCall(GroupMember m) async {
-    final granted = await Permissions.requestCallPermissions(context, isVideo: true);
+    final granted =
+        await Permissions.requestCallPermissions(context, isVideo: true);
     if (!granted || !mounted) return;
     Navigator.pushNamed(context, '/call', arguments: {
       'userId': m.userId,
@@ -228,7 +267,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _onVoiceCall(GroupMember m) async {
-    final granted = await Permissions.requestCallPermissions(context, isVideo: false);
+    final granted =
+        await Permissions.requestCallPermissions(context, isVideo: false);
     if (!granted || !mounted) return;
     Navigator.pushNamed(context, '/call', arguments: {
       'userId': m.userId,
@@ -275,10 +315,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _groups.isEmpty
-            ? _EmptyState(
-              isHost: auth.isHost,
-              isVerifiedHost: auth.isHost && (auth.user?.emailVerified ?? false),
-            )
+              ? _EmptyState(
+                  isHost: auth.isHost,
+                  isVerifiedHost:
+                      auth.isHost && (auth.user?.emailVerified ?? false),
+                )
               : RefreshIndicator(
                   onRefresh: _loadMembers,
                   child: ListView.builder(
@@ -362,7 +403,8 @@ class _GroupDropdown extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(current?.name ?? '',
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
             const Icon(Icons.arrow_drop_down, size: 28),
           ],
         ),

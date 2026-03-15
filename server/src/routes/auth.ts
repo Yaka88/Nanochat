@@ -11,11 +11,13 @@ const registerSchema = z.object({
     password: z.string().min(6),
     nickname: z.string().min(1).max(50),
     avatarUrl: z.string().url().optional(),
+    deviceId: z.string().optional(),
 });
 
 const loginSchema = z.object({
     email: z.string().email(),
     password: z.string().min(1),
+    deviceId: z.string().optional(),
 });
 
 const loginByIdSchema = z.object({
@@ -26,6 +28,7 @@ const loginByIdSchema = z.object({
 const upgradeSchema = z.object({
     email: z.string().email(),
     password: z.string().min(6),
+    deviceId: z.string().optional(),
 });
 
 export async function authRoutes(fastify: FastifyInstance) {
@@ -34,6 +37,13 @@ export async function authRoutes(fastify: FastifyInstance) {
         try {
             const body = registerSchema.parse(request.body);
             const user = await registerUser(body);
+
+            // Force out other devices
+            if (body.deviceId) {
+                const { forceLogoutOtherDevices } = await import('../websocket/handler.js');
+                forceLogoutOtherDevices(user.id, body.deviceId);
+            }
+
             const token = fastify.jwt.sign({
                 id: user.id,
                 email: user.email,
@@ -87,6 +97,12 @@ export async function authRoutes(fastify: FastifyInstance) {
         try {
             const body = loginSchema.parse(request.body);
             const user = await loginWithEmail(body);
+
+            // Force out other devices
+            if (body.deviceId) {
+                const { forceLogoutOtherDevices } = await import('../websocket/handler.js');
+                forceLogoutOtherDevices(user.id, body.deviceId);
+            }
 
             const token = fastify.jwt.sign({
                 id: user.id,
@@ -152,7 +168,14 @@ export async function authRoutes(fastify: FastifyInstance) {
                 userId: request.user.id,
                 email: body.email,
                 password: body.password,
+                deviceId: body.deviceId,
             });
+
+            // Force out other devices
+            if (body.deviceId) {
+                const { forceLogoutOtherDevices } = await import('../websocket/handler.js');
+                forceLogoutOtherDevices(user.id, body.deviceId);
+            }
 
             const token = fastify.jwt.sign({
                 id: user.id,

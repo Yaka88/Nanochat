@@ -21,6 +21,12 @@ class _JoinGroupScreenState extends State<JoinGroupScreen> {
   bool _loading = false;
   String? _error;
 
+  @override
+  void dispose() {
+    _nickCtrl.dispose();
+    super.dispose();
+  }
+
     String get _groupName =>
       (widget.inviteData['group_name'] ?? widget.inviteData['groupName'] ?? '')
         .toString();

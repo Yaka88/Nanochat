@@ -19,6 +19,18 @@ declare module '@fastify/jwt' {
 export async function verifyToken(request: FastifyRequest, reply: FastifyReply) {
     try {
         await request.jwtVerify();
+        const user = await prisma.user.findUnique({
+            where: { id: request.user.id },
+            select: { isDisabled: true },
+        });
+
+        if (!user) {
+            return reply.code(401).send({ error: 'Unauthorized', message: 'User not found' });
+        }
+
+        if (user.isDisabled) {
+            return reply.code(403).send({ error: 'Forbidden', message: 'Account is disabled' });
+        }
     } catch (err) {
         return reply.code(401).send({ error: 'Unauthorized', message: 'Invalid or expired token' });
     }
@@ -27,6 +39,19 @@ export async function verifyToken(request: FastifyRequest, reply: FastifyReply) 
 export async function verifyRegisteredUser(request: FastifyRequest, reply: FastifyReply) {
     try {
         await request.jwtVerify();
+        const user = await prisma.user.findUnique({
+            where: { id: request.user.id },
+            select: { isDisabled: true },
+        });
+
+        if (!user) {
+            return reply.code(401).send({ error: 'Unauthorized', message: 'User not found' });
+        }
+
+        if (user.isDisabled) {
+            return reply.code(403).send({ error: 'Forbidden', message: 'Account is disabled' });
+        }
+
         if (!request.user.isRegistered) {
             return reply.code(403).send({ error: 'Forbidden', message: 'This action requires a registered account' });
         }
@@ -38,6 +63,19 @@ export async function verifyRegisteredUser(request: FastifyRequest, reply: Fasti
 export async function verifyRegisteredAndVerifiedUser(request: FastifyRequest, reply: FastifyReply) {
     try {
         await request.jwtVerify();
+        const activeUser = await prisma.user.findUnique({
+            where: { id: request.user.id },
+            select: { isDisabled: true },
+        });
+
+        if (!activeUser) {
+            return reply.code(401).send({ error: 'Unauthorized', message: 'User not found' });
+        }
+
+        if (activeUser.isDisabled) {
+            return reply.code(403).send({ error: 'Forbidden', message: 'Account is disabled' });
+        }
+
         if (!request.user.isRegistered) {
             return reply.code(403).send({ error: 'Forbidden', message: 'This action requires a registered account' });
         }

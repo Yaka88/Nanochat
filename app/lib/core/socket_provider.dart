@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
+import 'api.dart';
 import 'storage.dart';
 
 class SocketProvider extends ChangeNotifier {
   io.Socket? _socket;
   final Map<String, bool> _onlineStatus = {};
   List<Map<String, dynamic>>? _cachedIceServers;
+  DateTime? _iceServersCachedAt;
 
   bool isUserOnline(String userId) => _onlineStatus[userId] ?? false;
 
@@ -24,14 +26,15 @@ class SocketProvider extends ChangeNotifier {
     _cachedIceServers = null;
 
     final token = await LocalStorage.getToken();
+    final deviceId = await LocalStorage.getOrCreateDeviceId();
     if (token == null) return;
 
     _socket = io.io(
-      'https://chat.bluelaser.cn',
+      Api.socketUrl,
       io.OptionBuilder()
           .setTransports(['websocket'])
-          .setExtraHeaders({'Authorization': 'Bearer $token'})
-          .setAuth({'token': token})
+          .setExtraHeaders({'Authorization': 'Bearer $token', 'x-device-id': deviceId})
+          .setAuth({'token': token, 'deviceId': deviceId})
           .enableReconnection()
           .setReconnectionAttempts(10)
           .setReconnectionDelay(1000)
@@ -49,13 +52,26 @@ class SocketProvider extends ChangeNotifier {
     _socket!.on('presence:snapshot', (data) {
       final ids = (data is Map ? data['onlineUserIds'] : null) as List<dynamic>?;
       if (ids == null) return;
-      // Clear stale status before applying the authoritative snapshot
-      _onlineStatus.clear();
+
+      // Build the set of currently-online user IDs from the snapshot
+      final snapshotOnline = <String>{};
       for (final id in ids) {
         final userId = id?.toString();
         if (userId == null || userId.isEmpty) continue;
-        _onlineStatus[userId] = true;
+        snapshotOnline.add(userId);
       }
+
+      // Mark users not in the snapshot as offline,
+      // mark users in the snapshot as online.
+      final allKnown = _onlineStatus.keys.toList();
+      for (final uid in allKnown) {
+        _onlineStatus[uid] = snapshotOnline.contains(uid);
+      }
+      // Also add any new users from the snapshot
+      for (final uid in snapshotOnline) {
+        _onlineStatus[uid] = true;
+      }
+
       notifyListeners();
     });
 
@@ -70,35 +86,28 @@ class SocketProvider extends ChangeNotifier {
     });
 
     // Call events
-    _socket!.on('call:request', (data) {
-      _onCallRequest?.call(data);
-    });
-
-    _socket!.on('call:accept', (data) {
-      _onCallAccepted?.call(data);
-    });
-
-    _socket!.on('call:reject', (data) {
-      _onCallRejected?.call(data);
-    });
-
-    _socket!.on('call:end', (data) {
-      _onCallEnded?.call(data);
-    });
-
-    _socket!.on('call:error', (data) {
-      _onCallError?.call(data);
-    });
+    // Call events
+    _socket!.on('call:request', (data) => _onCallRequestCtrl.add(data));
+    _socket!.on('call:accept', (data) => _onCallAcceptedCtrl.add(data));
+    _socket!.on('call:reject', (data) => _onCallRejectedCtrl.add(data));
+    _socket!.on('call:end', (data) => _onCallEndedCtrl.add(data));
+    _socket!.on('call:error', (data) => _onCallErrorCtrl.add(data));
 
     // WebRTC signaling
-    _socket!.on('signal:offer', (data) => _onSignalOffer?.call(data));
-    _socket!.on('signal:answer', (data) => _onSignalAnswer?.call(data));
-    _socket!.on('signal:ice', (data) => _onSignalIce?.call(data));
+    _socket!.on('signal:offer', (data) => _onSignalOfferCtrl.add(data));
+    _socket!.on('signal:answer', (data) => _onSignalAnswerCtrl.add(data));
+    _socket!.on('signal:ice', (data) => _onSignalIceCtrl.add(data));
 
     // Voice message
     _socket!.on('message:new', (data) {
-      _onNewMessage?.call(data);
+      _onNewMessageCtrl.add(data);
       notifyListeners();
+    });
+
+    // Force Logout
+    _socket!.on('force_logout', (data) {
+      _onForceLogoutCtrl.add(data);
+      disconnect();
     });
   }
 
@@ -107,11 +116,15 @@ class SocketProvider extends ChangeNotifier {
     _socket = null;
     _onlineStatus.clear();
     _cachedIceServers = null;
+    _iceServersCachedAt = null;
   }
 
   /// Emit explicit logout event so the server marks this user offline.
-  void emitLogout() {
+  /// Waits briefly so the event is sent before the socket is disposed.
+  Future<void> emitLogout() async {
     _socket?.emit('user:logout');
+    // Give the event a moment to reach the server before disconnect
+    await Future.delayed(const Duration(milliseconds: 300));
   }
 
   /// Force a full reconnection (dispose old socket, create new one).
@@ -132,8 +145,16 @@ class SocketProvider extends ChangeNotifier {
   }
 
   /// Fetch TURN/STUN ICE servers from the server.
-  /// Returns cached value if available; otherwise queries via socket ack.
+  /// Returns cached value if available and not expired; otherwise queries via socket ack.
   Future<List<Map<String, dynamic>>> getIceServers() async {
+    // Invalidate cache after 20 hours (TURN credentials have 24h TTL)
+    if (_cachedIceServers != null && _iceServersCachedAt != null) {
+      final age = DateTime.now().difference(_iceServersCachedAt!);
+      if (age.inHours >= 20) {
+        _cachedIceServers = null;
+        _iceServersCachedAt = null;
+      }
+    }
     if (_cachedIceServers != null) return _cachedIceServers!;
 
     final completer = Completer<List<Map<String, dynamic>>>();
@@ -153,6 +174,7 @@ class SocketProvider extends ChangeNotifier {
             .map((s) => Map<String, dynamic>.from(s as Map))
             .toList();
         _cachedIceServers = servers;
+        _iceServersCachedAt = DateTime.now();
         if (!completer.isCompleted) completer.complete(servers);
       } else {
         if (!completer.isCompleted) {
@@ -172,6 +194,7 @@ class SocketProvider extends ChangeNotifier {
             .map((s) => Map<String, dynamic>.from(s as Map))
             .toList();
         _cachedIceServers = servers;
+        _iceServersCachedAt = DateTime.now();
         completer.complete(servers);
       }
     });
@@ -191,42 +214,39 @@ class SocketProvider extends ChangeNotifier {
 
   void emit(String event, dynamic data) => _socket?.emit(event, data);
 
-  // Callbacks
-  Function(dynamic)? _onCallRequest;
-  Function(dynamic)? _onCallAccepted;
-  Function(dynamic)? _onCallRejected;
-  Function(dynamic)? _onCallEnded;
-  Function(dynamic)? _onCallError;
-  Function(dynamic)? _onSignalOffer;
-  Function(dynamic)? _onSignalAnswer;
-  Function(dynamic)? _onSignalIce;
-  Function(dynamic)? _onNewMessage;
+  final _onCallRequestCtrl = StreamController<dynamic>.broadcast();
+  final _onCallAcceptedCtrl = StreamController<dynamic>.broadcast();
+  final _onCallRejectedCtrl = StreamController<dynamic>.broadcast();
+  final _onCallEndedCtrl = StreamController<dynamic>.broadcast();
+  final _onCallErrorCtrl = StreamController<dynamic>.broadcast();
+  final _onSignalOfferCtrl = StreamController<dynamic>.broadcast();
+  final _onSignalAnswerCtrl = StreamController<dynamic>.broadcast();
+  final _onSignalIceCtrl = StreamController<dynamic>.broadcast();
+  final _onNewMessageCtrl = StreamController<dynamic>.broadcast();
+  final _onForceLogoutCtrl = StreamController<dynamic>.broadcast();
 
-  set onCallRequest(Function(dynamic)? fn) => _onCallRequest = fn;
-  set onCallAccepted(Function(dynamic)? fn) => _onCallAccepted = fn;
-  set onCallRejected(Function(dynamic)? fn) => _onCallRejected = fn;
-  set onCallEnded(Function(dynamic)? fn) => _onCallEnded = fn;
-  set onCallError(Function(dynamic)? fn) => _onCallError = fn;
-  set onSignalOffer(Function(dynamic)? fn) => _onSignalOffer = fn;
-  set onSignalAnswer(Function(dynamic)? fn) => _onSignalAnswer = fn;
-  set onSignalIce(Function(dynamic)? fn) => _onSignalIce = fn;
-  set onNewMessage(Function(dynamic)? fn) => _onNewMessage = fn;
-
-  Function(dynamic)? get onCallRequestHandler => _onCallRequest;
-  Function(dynamic)? get onCallAcceptedHandler => _onCallAccepted;
-  Function(dynamic)? get onCallRejectedHandler => _onCallRejected;
-  Function(dynamic)? get onCallEndedHandler => _onCallEnded;
-  Function(dynamic)? get onCallErrorHandler => _onCallError;
-  Function(dynamic)? get onSignalOfferHandler => _onSignalOffer;
-  Function(dynamic)? get onSignalAnswerHandler => _onSignalAnswer;
-  Function(dynamic)? get onSignalIceHandler => _onSignalIce;
+  Stream<dynamic> get onCallRequestStream => _onCallRequestCtrl.stream;
+  Stream<dynamic> get onCallAcceptedStream => _onCallAcceptedCtrl.stream;
+  Stream<dynamic> get onCallRejectedStream => _onCallRejectedCtrl.stream;
+  Stream<dynamic> get onCallEndedStream => _onCallEndedCtrl.stream;
+  Stream<dynamic> get onCallErrorStream => _onCallErrorCtrl.stream;
+  Stream<dynamic> get onSignalOfferStream => _onSignalOfferCtrl.stream;
+  Stream<dynamic> get onSignalAnswerStream => _onSignalAnswerCtrl.stream;
+  Stream<dynamic> get onSignalIceStream => _onSignalIceCtrl.stream;
+  Stream<dynamic> get onNewMessageStream => _onNewMessageCtrl.stream;
+  Stream<dynamic> get onForceLogoutStream => _onForceLogoutCtrl.stream;
 
   void updateBulkOnlineStatus(List<dynamic> members) {
     for (final m in members) {
       if (m is! Map) continue;
       final userId = (m['userId'] ?? m['id'])?.toString();
       if (userId == null || userId.isEmpty) continue;
-      _onlineStatus[userId] = m['isOnline'] ?? false;
+      // Only use API data to seed users we haven't heard from via WebSocket.
+      // If we already have a status for this user, don't overwrite it;
+      // the WebSocket presence events are more authoritative.
+      if (!_onlineStatus.containsKey(userId)) {
+        _onlineStatus[userId] = m['isOnline'] ?? false;
+      }
     }
     notifyListeners();
   }

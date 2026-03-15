@@ -13,7 +13,7 @@ import { authRoutes } from './routes/auth.js';
 import { groupRoutes } from './routes/groups.js';
 import { messageRoutes } from './routes/messages.js';
 import { adminRoutes } from './routes/admin.js';
-import { setupWebSocket } from './websocket/handler.js';
+import { setupWebSocket, markAllUsersOffline } from './websocket/handler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -99,6 +99,12 @@ const start = async () => {
 // Graceful shutdown
 const shutdown = async () => {
     console.log('Shutting down...');
+    // Mark all users offline before shutting down
+    try {
+        await markAllUsersOffline();
+    } catch (err) {
+        console.error('Failed to mark users offline during shutdown:', err);
+    }
     await disconnectDatabase();
     await fastify.close();
     process.exit(0);

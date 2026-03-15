@@ -8,21 +8,25 @@ interface RegisterInput {
     password: string;
     nickname: string;
     avatarUrl?: string;
+    deviceId?: string;
 }
 
 interface LoginInput {
     email: string;
     password: string;
+    deviceId?: string;
 }
 
 interface UpgradeInput {
     userId: string;
     email: string;
     password: string;
+    deviceId?: string;
 }
 
 export async function registerUser(input: RegisterInput) {
-    const { email, password, nickname, avatarUrl } = input;
+    const { password, nickname, avatarUrl, deviceId } = input;
+    const email = input.email.trim().toLowerCase();
 
     // Check if email already exists
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -46,11 +50,15 @@ export async function registerUser(input: RegisterInput) {
             isRegistered: true,
             emailVerified: false,
             verifyToken,
+            ...(deviceId ? { deviceId } : {}),
         },
     });
 
     // Send verification email
-    await sendVerificationEmail(email, verifyToken);
+    const sent = await sendVerificationEmail(email, verifyToken);
+    if (!sent) {
+        throw new Error('Failed to send verification email');
+    }
 
     return {
         id: user.id,
@@ -78,7 +86,8 @@ export async function verifyEmail(token: string) {
 }
 
 export async function loginWithEmail(input: LoginInput) {
-    const { email, password } = input;
+    const { password, deviceId } = input;
+    const email = input.email.trim().toLowerCase();
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user || !user.passwordHash) {
@@ -96,6 +105,13 @@ export async function loginWithEmail(input: LoginInput) {
 
     if (!user.emailVerified) {
         throw new Error('Email not verified');
+    }
+
+    if (deviceId && deviceId !== user.deviceId) {
+        await prisma.user.update({
+            where: { id: user.id },
+            data: { deviceId },
+        });
     }
 
     return {
@@ -172,7 +188,7 @@ export async function getUserById(userId: string) {
 }
 
 export async function upgradeMemberToRegistered(input: UpgradeInput) {
-    const { userId, email, password } = input;
+    const { userId, email, password, deviceId } = input;
     const normalizedEmail = email.trim().toLowerCase();
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
@@ -204,10 +220,14 @@ export async function upgradeMemberToRegistered(input: UpgradeInput) {
             isRegistered: true,
             emailVerified: false,
             verifyToken,
+            ...(deviceId ? { deviceId } : {}),
         },
     });
 
-    await sendVerificationEmail(normalizedEmail, verifyToken);
+    const sent = await sendVerificationEmail(normalizedEmail, verifyToken);
+    if (!sent) {
+        throw new Error('Failed to send verification email');
+    }
 
     return {
         id: updated.id,

@@ -40,13 +40,13 @@ class _CallScreenState extends State<CallScreen> {
   bool _remoteDescriptionSet = false;
   late final SocketProvider _socketProvider;
 
-  Function(dynamic)? _prevOnCallAccepted;
-  Function(dynamic)? _prevOnCallRejected;
-  Function(dynamic)? _prevOnCallEnded;
-  Function(dynamic)? _prevOnCallError;
-  Function(dynamic)? _prevOnSignalOffer;
-  Function(dynamic)? _prevOnSignalAnswer;
-  Function(dynamic)? _prevOnSignalIce;
+  StreamSubscription<dynamic>? _callAcceptedSub;
+  StreamSubscription<dynamic>? _callRejectedSub;
+  StreamSubscription<dynamic>? _callEndedSub;
+  StreamSubscription<dynamic>? _callErrorSub;
+  StreamSubscription<dynamic>? _signalOfferSub;
+  StreamSubscription<dynamic>? _signalAnswerSub;
+  StreamSubscription<dynamic>? _signalIceSub;
 
   @override
   void initState() {
@@ -122,28 +122,23 @@ class _CallScreenState extends State<CallScreen> {
     };
 
     // Listen for signaling
-    _prevOnCallAccepted = _socketProvider.onCallAcceptedHandler;
-    _prevOnCallRejected = _socketProvider.onCallRejectedHandler;
-    _prevOnCallEnded = _socketProvider.onCallEndedHandler;
-    _prevOnCallError = _socketProvider.onCallErrorHandler;
-    _prevOnSignalOffer = _socketProvider.onSignalOfferHandler;
-    _prevOnSignalAnswer = _socketProvider.onSignalAnswerHandler;
-    _prevOnSignalIce = _socketProvider.onSignalIceHandler;
-
-    _socketProvider.onSignalAnswer = (data) async {
+    _signalAnswerSub = _socketProvider.onSignalAnswerStream.listen((data) async {
       if (data['fromUserId']?.toString() != widget.targetUserId) return;
-      if (_pc == null) return;
+      if (_cleaned || _pc == null) return;
       await _setRemoteDescriptionAndFlush(
         RTCSessionDescription(data['sdp'], data['type']),
       );
-    };
+    });
 
-    _socketProvider.onSignalIce = (data) async {
+    _signalIceSub = _socketProvider.onSignalIceStream.listen((data) async {
       if (data['fromUserId']?.toString() != widget.targetUserId) return;
+      if (_cleaned || _pc == null) return;
+      final candidateData = data['candidate'];
+      if (candidateData == null || candidateData is! Map) return;
       final candidate = RTCIceCandidate(
-        data['candidate']['candidate'],
-        data['candidate']['sdpMid'],
-        data['candidate']['sdpMLineIndex'],
+        candidateData['candidate']?.toString(),
+        candidateData['sdpMid']?.toString(),
+        candidateData['sdpMLineIndex'] as int?,
       );
 
       if (!_remoteDescriptionSet) {
@@ -153,32 +148,34 @@ class _CallScreenState extends State<CallScreen> {
 
       if (_pc == null) return;
       await _pc!.addCandidate(candidate);
-    };
+    });
 
-    _socketProvider.onCallAccepted = (data) {
+    _callAcceptedSub = _socketProvider.onCallAcceptedStream.listen((data) {
       if (data['fromUserId']?.toString() != widget.targetUserId) return;
       _accepted = true;
       _outgoingTimeoutTimer?.cancel();
       _createOffer();
-    };
-    _socketProvider.onCallRejected = (data) {
+    });
+    _callRejectedSub = _socketProvider.onCallRejectedStream.listen((data) {
       if (data['fromUserId']?.toString() != widget.targetUserId) return;
       _finishCall(localHangup: false);
-    };
-    _socketProvider.onCallEnded = (data) {
+    });
+
+    _callEndedSub = _socketProvider.onCallEndedStream.listen((data) {
       if (data['fromUserId']?.toString() != widget.targetUserId) return;
       _finishCall(localHangup: false);
-    };
-    _socketProvider.onCallError = (data) {
+    });
+
+    _callErrorSub = _socketProvider.onCallErrorStream.listen((data) {
       if (!mounted) return;
       final message = (data is Map ? data['message'] : null)?.toString() ?? 'Call failed';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       _finishCall(localHangup: false);
-    };
+    });
 
-    _socketProvider.onSignalOffer = (data) async {
+    _signalOfferSub = _socketProvider.onSignalOfferStream.listen((data) async {
       if (data['fromUserId']?.toString() != widget.targetUserId) return;
-      if (_pc == null) return;
+      if (_cleaned || _pc == null) return;
       await _setRemoteDescriptionAndFlush(
         RTCSessionDescription(data['sdp'], data['type']),
       );
@@ -192,7 +189,7 @@ class _CallScreenState extends State<CallScreen> {
         'sdp': answer.sdp,
         'type': answer.type,
       });
-    };
+    });
 
     if (!widget.isIncoming) {
       _socketProvider.emit('call:request', {
@@ -331,13 +328,13 @@ class _CallScreenState extends State<CallScreen> {
     if (_cleaned) return;
     _cleaned = true;
     _outgoingTimeoutTimer?.cancel();
-    _socketProvider.onCallAccepted = _prevOnCallAccepted;
-    _socketProvider.onCallRejected = _prevOnCallRejected;
-    _socketProvider.onCallEnded = _prevOnCallEnded;
-    _socketProvider.onCallError = _prevOnCallError;
-    _socketProvider.onSignalOffer = _prevOnSignalOffer;
-    _socketProvider.onSignalAnswer = _prevOnSignalAnswer;
-    _socketProvider.onSignalIce = _prevOnSignalIce;
+    _callAcceptedSub?.cancel();
+    _callRejectedSub?.cancel();
+    _callEndedSub?.cancel();
+    _callErrorSub?.cancel();
+    _signalOfferSub?.cancel();
+    _signalAnswerSub?.cancel();
+    _signalIceSub?.cancel();
     try { _localStream?.dispose(); } catch (_) {}
     try { _pc?.close(); } catch (_) {}
     try { _localRenderer.dispose(); } catch (_) {}

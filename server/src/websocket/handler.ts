@@ -17,7 +17,20 @@ interface ConnectedUser {
 }
 
 // In-memory store for connected users
-const connectedUsers = new Map<string, ConnectedUser>();
+// Supports multiple concurrent sockets per user (e.g. foreground app + background service, or multiple devices)
+const connectedUsers = new Map<string, Map<string, ConnectedUser>>();
+
+// Pending offline timers: userId -> timeout handle
+// When a socket disconnects we wait before marking the user offline
+// so that brief reconnects (e.g. WiFi ↔ cellular) don't flash offline.
+const pendingOfflineTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+// Track recently cancelled calls so that a late-arriving call:request
+// on the callee side can be dismissed.
+const cancelledCalls = new Set<string>(); // "callerUserId -> targetUserId"
+
+// Keep reference to the Socket.IO server for deferred broadcasts
+let ioRef: Server | null = null;
 
 // ========================================
 // TURN Credential Generation
@@ -89,8 +102,12 @@ async function loadGroupIds(userId: string): Promise<string[]> {
 // ========================================
 
 export function setupWebSocket(io: Server) {
-    prisma.user.updateMany({ data: { isOnline: true } }).catch((error) => {
-        console.error('Failed to set all users online on startup:', error);
+    ioRef = io;
+
+    // On (re)start, reset ALL users to offline.  Only users who actually
+    // connect a WebSocket will be marked online.
+    prisma.user.updateMany({ data: { isOnline: false } }).catch((error) => {
+        console.error('Failed to reset all users offline on startup:', error);
     });
 
     // Authentication middleware
@@ -103,6 +120,25 @@ export function setupWebSocket(io: Server) {
             }
 
             const payload = jwt.verify(token, config.jwtSecret) as JwtPayload;
+            const user = await prisma.user.findUnique({
+                where: { id: payload.id },
+                select: { id: true, isDisabled: true },
+            });
+
+            if (!user) {
+                return next(new Error('User not found'));
+            }
+
+            if (user.isDisabled) {
+                return next(new Error('Account is disabled'));
+            }
+
+            // Save deviceId from the handshake
+            const deviceId = socket.handshake.auth.deviceId || socket.handshake.headers['x-device-id'];
+            if (deviceId) {
+                socket.data.deviceId = deviceId;
+            }
+
             socket.data.user = payload;
             next();
         } catch (error) {
@@ -114,6 +150,13 @@ export function setupWebSocket(io: Server) {
         const userId = socket.data.user.id;
         console.log(`🔌 User connected: ${userId}`);
 
+        // Cancel any pending offline timer for this user (reconnected in time)
+        const pendingTimer = pendingOfflineTimers.get(userId);
+        if (pendingTimer) {
+            clearTimeout(pendingTimer);
+            pendingOfflineTimers.delete(userId);
+        }
+
         // Get user's groups
         let groupIds = await loadGroupIds(userId);
 
@@ -123,7 +166,26 @@ export function setupWebSocket(io: Server) {
         }
 
         // Store connected user
-        connectedUsers.set(userId, {
+        if (!connectedUsers.has(userId)) {
+            connectedUsers.set(userId, new Map());
+        }
+        
+        // Before adding the new socket, check if we need to enforce device singleness
+        const currentDeviceId = socket.data.deviceId;
+        if (currentDeviceId) {
+            const userSockets = connectedUsers.get(userId)!;
+            for (const [sid, connectedUser] of userSockets.entries()) {
+                const existingDeviceId = connectedUser.socket.data.deviceId;
+                // If the existing socket has a DIFFERENT device ID, kick it
+                if (existingDeviceId && existingDeviceId !== currentDeviceId) {
+                    connectedUser.socket.emit('force_logout', { message: '您的账号已在其他设备登录' });
+                    connectedUser.socket.disconnect(true);
+                    userSockets.delete(sid);
+                }
+            }
+        }
+
+        connectedUsers.get(userId)!.set(socket.id, {
             socket,
             userId,
             groupIds,
@@ -133,7 +195,11 @@ export function setupWebSocket(io: Server) {
         try {
             await prisma.user.update({
                 where: { id: userId },
-                data: { isOnline: true, lastOnlineAt: new Date() },
+                data: { 
+                    isOnline: true, 
+                    lastOnlineAt: new Date(),
+                    ...(currentDeviceId ? { deviceId: currentDeviceId } : {})
+                },
             });
         } catch (error) {
             console.error(`Failed to set online status for user ${userId}:`, error);
@@ -198,9 +264,12 @@ export function setupWebSocket(io: Server) {
             if (!groupIds.includes(gid)) {
                 groupIds.push(gid);
             }
-            const entry = connectedUsers.get(userId);
-            if (entry && entry.socket.id === socket.id) {
-                entry.groupIds = groupIds;
+            const userSockets = connectedUsers.get(userId);
+            if (userSockets) {
+                const entry = userSockets.get(socket.id);
+                if (entry) {
+                    entry.groupIds = groupIds;
+                }
             }
 
             // Broadcast online to the newly joined group
@@ -237,9 +306,12 @@ export function setupWebSocket(io: Server) {
             }
 
             groupIds = freshGroupIds;
-            const entry = connectedUsers.get(userId);
-            if (entry && entry.socket.id === socket.id) {
-                entry.groupIds = groupIds;
+            const userSockets = connectedUsers.get(userId);
+            if (userSockets) {
+                const entry = userSockets.get(socket.id);
+                if (entry) {
+                    entry.groupIds = groupIds;
+                }
             }
 
             // Send full presence snapshot (from DB)
@@ -259,6 +331,24 @@ export function setupWebSocket(io: Server) {
         // Call Signaling Events
         // ========================================
 
+        const ensureAuthorizedTarget = async (
+            targetUserId: string | undefined,
+            eventType: 'call' | 'signal'
+        ): Promise<string | null> => {
+            if (!targetUserId || targetUserId === userId) {
+                socket.emit('call:error', { message: `Invalid ${eventType} target` });
+                return null;
+            }
+
+            const authorized = await hasCommonGroup(userId, targetUserId);
+            if (!authorized) {
+                socket.emit('call:error', { message: `Not allowed to ${eventType} this user` });
+                return null;
+            }
+
+            return targetUserId;
+        };
+
         // Request a call
         socket.on('call:request', async (data: { targetUserId: string; isVideo?: boolean }) => {
             if (!data?.targetUserId || data.targetUserId === userId) {
@@ -272,44 +362,85 @@ export function setupWebSocket(io: Server) {
                 return;
             }
 
-            const target = connectedUsers.get(data.targetUserId);
-            if (target) {
+            // Check if this specific call was recently cancelled
+            const cancelKey = `${userId}->${data.targetUserId}`;
+            if (cancelledCalls.has(cancelKey)) {
+                // The caller hung up before we could process the request
+                cancelledCalls.delete(cancelKey);
+                return;
+            }
+
+            const targetSockets = connectedUsers.get(data.targetUserId);
+            if (targetSockets && targetSockets.size > 0) {
                 const caller = await prisma.user.findUnique({
                     where: { id: userId },
                     select: { nickname: true },
                 });
 
-                target.socket.emit('call:request', {
-                    callerUserId: userId,
-                    callerName: caller?.nickname || 'Unknown',
-                    isVideo: data.isVideo ?? true,
-                });
+                for (const target of targetSockets.values()) {
+                    target.socket.emit('call:request', {
+                        callerUserId: userId,
+                        callerName: caller?.nickname || 'Unknown',
+                        isVideo: data.isVideo ?? true,
+                    });
+                }
             } else {
                 socket.emit('call:error', { message: 'User is offline' });
             }
         });
 
         // Accept call
-        socket.on('call:accept', (data: { targetUserId: string }) => {
-            const target = connectedUsers.get(data.targetUserId);
-            if (target) {
-                target.socket.emit('call:accept', { fromUserId: userId });
+        socket.on('call:accept', async (data: { targetUserId: string }) => {
+            const targetUserId = await ensureAuthorizedTarget(data?.targetUserId, 'call');
+            if (!targetUserId) return;
+
+            const targetSockets = connectedUsers.get(targetUserId);
+            if (targetSockets) {
+                for (const target of targetSockets.values()) {
+                    target.socket.emit('call:accept', { fromUserId: userId });
+                }
+            }
+
+            // Tell my OTHER devices to stop ringing CallKit because I answered here
+            const mySockets = connectedUsers.get(userId);
+            if (mySockets) {
+                for (const [socketId, myClient] of mySockets.entries()) {
+                    if (socketId !== socket.id) {
+                        myClient.socket.emit('call:answered_elsewhere', { fromUserId: targetUserId });
+                    }
+                }
             }
         });
 
         // Reject call
-        socket.on('call:reject', (data: { targetUserId: string; reason?: string }) => {
-            const target = connectedUsers.get(data.targetUserId);
-            if (target) {
-                target.socket.emit('call:reject', { fromUserId: userId, reason: data.reason });
+        socket.on('call:reject', async (data: { targetUserId: string; reason?: string }) => {
+            const targetUserId = await ensureAuthorizedTarget(data?.targetUserId, 'call');
+            if (!targetUserId) return;
+
+            const targetSockets = connectedUsers.get(targetUserId);
+            if (targetSockets) {
+                for (const target of targetSockets.values()) {
+                    target.socket.emit('call:reject', { fromUserId: userId, reason: data.reason });
+                }
             }
         });
 
         // End call
-        socket.on('call:end', (data: { targetUserId: string }) => {
-            const target = connectedUsers.get(data.targetUserId);
-            if (target) {
-                target.socket.emit('call:end', { fromUserId: userId });
+        socket.on('call:end', async (data: { targetUserId: string }) => {
+            const targetUserId = await ensureAuthorizedTarget(data?.targetUserId, 'call');
+            if (!targetUserId) return;
+
+            // Record cancellation so a late-arriving call:request can be
+            // suppressed on the callee side when they check.
+            cancelledCalls.add(`${userId}->${targetUserId}`);
+            // Auto-clean after 60 seconds
+            setTimeout(() => cancelledCalls.delete(`${userId}->${targetUserId}`), 60_000);
+
+            const targetSockets = connectedUsers.get(targetUserId);
+            if (targetSockets) {
+                for (const target of targetSockets.values()) {
+                    target.socket.emit('call:end', { fromUserId: userId });
+                }
             }
         });
 
@@ -318,34 +449,54 @@ export function setupWebSocket(io: Server) {
         // ========================================
 
         // SDP Offer
-        socket.on('signal:offer', (data: { targetUserId: string; sdp?: string; type?: string }) => {
-            const target = connectedUsers.get(data.targetUserId);
-            if (target) {
-                target.socket.emit('signal:offer', {
-                    fromUserId: userId,
-                    sdp: data.sdp,
-                    type: data.type || 'offer',
-                });
+        socket.on('signal:offer', async (data: { targetUserId: string; sdp?: string; type?: string }) => {
+            const targetUserId = await ensureAuthorizedTarget(data?.targetUserId, 'signal');
+            if (!targetUserId) return;
+
+            const targetSockets = connectedUsers.get(targetUserId);
+            if (targetSockets) {
+                for (const target of targetSockets.values()) {
+                    target.socket.emit('signal:offer', {
+                        fromUserId: userId,
+                        sdp: data.sdp,
+                        type: data.type || 'offer',
+                    });
+                }
             }
         });
 
         // SDP Answer
-        socket.on('signal:answer', (data: { targetUserId: string; sdp?: string; type?: string }) => {
-            const target = connectedUsers.get(data.targetUserId);
-            if (target) {
-                target.socket.emit('signal:answer', {
-                    fromUserId: userId,
-                    sdp: data.sdp,
-                    type: data.type || 'answer',
-                });
+        socket.on('signal:answer', async (data: { targetUserId: string; sdp?: string; type?: string }) => {
+            const targetUserId = await ensureAuthorizedTarget(data?.targetUserId, 'signal');
+            if (!targetUserId) return;
+
+            const targetSockets = connectedUsers.get(targetUserId);
+            if (targetSockets) {
+                for (const target of targetSockets.values()) {
+                    target.socket.emit('signal:answer', {
+                        fromUserId: userId,
+                        sdp: data.sdp,
+                        type: data.type || 'answer',
+                    });
+                }
             }
         });
 
         // ICE Candidate
-        socket.on('signal:ice', (data: { targetUserId: string; candidate: RTCIceCandidateInit }) => {
-            const target = connectedUsers.get(data.targetUserId);
-            if (target) {
-                target.socket.emit('signal:ice', { fromUserId: userId, candidate: data.candidate });
+        socket.on('signal:ice', async (data: { targetUserId: string; candidate: RTCIceCandidateInit }) => {
+            const targetUserId = await ensureAuthorizedTarget(data?.targetUserId, 'signal');
+            if (!targetUserId) return;
+
+            if (!data?.candidate) {
+                socket.emit('call:error', { message: 'Invalid ICE candidate' });
+                return;
+            }
+
+            const targetSockets = connectedUsers.get(targetUserId);
+            if (targetSockets) {
+                for (const target of targetSockets.values()) {
+                    target.socket.emit('signal:ice', { fromUserId: userId, candidate: data.candidate });
+                }
             }
         });
 
@@ -357,9 +508,12 @@ export function setupWebSocket(io: Server) {
             console.log(`🔓 User explicitly logged out: ${userId}`);
 
             // Remove from connected users
-            const current = connectedUsers.get(userId);
-            if (current?.socket.id === socket.id) {
-                connectedUsers.delete(userId);
+            const userSockets = connectedUsers.get(userId);
+            if (userSockets) {
+                userSockets.delete(socket.id);
+                if (userSockets.size === 0) {
+                    connectedUsers.delete(userId);
+                }
             }
 
             // Set user offline only on explicit logout
@@ -391,27 +545,52 @@ export function setupWebSocket(io: Server) {
             console.log(`🔌 User disconnected: ${userId}`);
 
             // Only clean up in-memory entry if this socket is still the active one
-            const current = connectedUsers.get(userId);
-            if (current?.socket.id !== socket.id) {
+            const userSockets = connectedUsers.get(userId);
+            if (!userSockets || !userSockets.has(socket.id)) {
                 return;
             }
 
-            // Remove from connected users map but keep the user marked as ONLINE
-            // in the database. Users stay online unless they explicitly log out
-            // or account is deleted.
-            connectedUsers.delete(userId);
-
-            // Update lastOnlineAt timestamp but do NOT set isOnline to false
-            try {
-                await prisma.user.update({
-                    where: { id: userId },
-                    data: { lastOnlineAt: new Date() },
-                });
-            } catch (error) {
-                console.error(`Failed to update lastOnlineAt for user ${userId}:`, error);
+            // Remove from connected-users map immediately so call:request
+            // won't try to reach an unreachable socket.
+            userSockets.delete(socket.id);
+            if (userSockets.size === 0) {
+                connectedUsers.delete(userId);
+            } else {
+                // User still has other connected sockets (e.g. background service), do not mark offline
+                return;
             }
 
-            // Do NOT broadcast user:offline — user remains "online"
+            // Capture the groupIds for the deferred broadcast
+            const userGroupIds = [...groupIds];
+
+            // Grace period: wait 30 seconds before marking the user offline.
+            // If the user reconnects within this window the timer is cancelled
+            // in the 'connection' handler above, avoiding flicker.
+            const timer = setTimeout(async () => {
+                pendingOfflineTimers.delete(userId);
+
+                // If the user reconnected in the meantime, do nothing.
+                if (connectedUsers.has(userId)) return;
+
+                // Mark offline in DB
+                try {
+                    await prisma.user.update({
+                        where: { id: userId },
+                        data: { isOnline: false, lastOnlineAt: new Date() },
+                    });
+                } catch (error) {
+                    console.error(`Failed to set offline status for user ${userId}:`, error);
+                }
+
+                // Broadcast user:offline to all groups
+                if (ioRef) {
+                    for (const gid of userGroupIds) {
+                        ioRef.to(`group:${gid}`).emit('user:offline', { userId, groupId: gid });
+                    }
+                }
+            }, 30_000);
+
+            pendingOfflineTimers.set(userId, timer);
         });
     });
 }
@@ -426,9 +605,40 @@ export function isUserOnline(userId: string): boolean {
 
 // Helper function to notify user of new message
 export function notifyNewMessage(receiverId: string, message: any) {
-    const receiver = connectedUsers.get(receiverId);
-    if (receiver) {
-        receiver.socket.emit('message:new', message);
+    const receiverSockets = connectedUsers.get(receiverId);
+    if (receiverSockets) {
+        for (const receiver of receiverSockets.values()) {
+            receiver.socket.emit('message:new', message);
+        }
+    }
+}
+
+// Mark all users offline – call during graceful shutdown
+export async function markAllUsersOffline() {
+    // Cancel all pending timers
+    for (const timer of pendingOfflineTimers.values()) {
+        clearTimeout(timer);
+    }
+    pendingOfflineTimers.clear();
+    connectedUsers.clear();
+
+    await prisma.user.updateMany({
+        data: { isOnline: false, lastOnlineAt: new Date() },
+    });
+}
+
+// Kick all sockets of a user that do NOT match the given deviceId
+export function forceLogoutOtherDevices(userId: string, activeDeviceId: string) {
+    const userSockets = connectedUsers.get(userId);
+    if (!userSockets) return;
+
+    for (const [socketId, userState] of userSockets.entries()) {
+        const socketDevice = userState.socket.data.deviceId;
+        if (socketDevice && socketDevice !== activeDeviceId) {
+            userState.socket.emit('force_logout', { message: '您的账号已在其他设备登录' });
+            userState.socket.disconnect(true);
+            userSockets.delete(socketId);
+        }
     }
 }
 

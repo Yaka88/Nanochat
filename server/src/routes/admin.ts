@@ -18,6 +18,17 @@ async function verifyAdmin(request: FastifyRequest, reply: FastifyReply) {
 }
 
 export async function adminRoutes(fastify: FastifyInstance) {
+    const usersQuerySchema = z.object({
+        page: z.coerce.number().int().min(1).default(1),
+        limit: z.coerce.number().int().min(1).max(100).default(20),
+        search: z.string().trim().min(1).optional(),
+    });
+
+    const groupsQuerySchema = z.object({
+        page: z.coerce.number().int().min(1).default(1),
+        limit: z.coerce.number().int().min(1).max(100).default(20),
+    });
+
     // POST /admin/api/login
     fastify.post('/login', async (request: FastifyRequest, reply: FastifyReply) => {
         try {
@@ -135,8 +146,8 @@ export async function adminRoutes(fastify: FastifyInstance) {
     // GET /admin/api/users
     fastify.get('/users', { preHandler: [verifyAdmin] }, async (request: FastifyRequest, reply: FastifyReply) => {
         try {
-            const { page = '1', limit = '20', search } = request.query as { page?: string; limit?: string; search?: string };
-            const skip = (parseInt(page) - 1) * parseInt(limit);
+            const { page, limit, search } = usersQuerySchema.parse(request.query ?? {});
+            const skip = (page - 1) * limit;
 
             const where: any = {};
             if (search) {
@@ -165,7 +176,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
                     },
                     orderBy: { createdAt: 'desc' },
                     skip,
-                    take: parseInt(limit),
+                    take: limit,
                 }),
                 prisma.user.count({ where }),
             ]);
@@ -178,13 +189,17 @@ export async function adminRoutes(fastify: FastifyInstance) {
                     groupCount: u._count.memberships,
                 })),
                 pagination: {
-                    page: parseInt(page),
-                    limit: parseInt(limit),
+                    page,
+                    limit,
                     total,
-                    totalPages: Math.ceil(total / parseInt(limit)),
+                    totalPages: Math.ceil(total / limit),
                 },
             });
         } catch (error: any) {
+            if (error.name === 'ZodError') {
+                reply.code(400).send({ error: 'Validation error', details: error.errors });
+                return;
+            }
             reply.code(500).send({ error: error.message });
         }
     });
@@ -258,8 +273,8 @@ export async function adminRoutes(fastify: FastifyInstance) {
     // GET /admin/api/groups
     fastify.get('/groups', { preHandler: [verifyAdmin] }, async (request: FastifyRequest, reply: FastifyReply) => {
         try {
-            const { page = '1', limit = '20' } = request.query as { page?: string; limit?: string };
-            const skip = (parseInt(page) - 1) * parseInt(limit);
+            const { page, limit } = groupsQuerySchema.parse(request.query ?? {});
+            const skip = (page - 1) * limit;
 
             const [groups, total] = await Promise.all([
                 prisma.group.findMany({
@@ -273,7 +288,7 @@ export async function adminRoutes(fastify: FastifyInstance) {
                     },
                     orderBy: { createdAt: 'desc' },
                     skip,
-                    take: parseInt(limit),
+                    take: limit,
                 }),
                 prisma.group.count(),
             ]);
@@ -288,13 +303,17 @@ export async function adminRoutes(fastify: FastifyInstance) {
                     createdAt: g.createdAt,
                 })),
                 pagination: {
-                    page: parseInt(page),
-                    limit: parseInt(limit),
+                    page,
+                    limit,
                     total,
-                    totalPages: Math.ceil(total / parseInt(limit)),
+                    totalPages: Math.ceil(total / limit),
                 },
             });
         } catch (error: any) {
+            if (error.name === 'ZodError') {
+                reply.code(400).send({ error: 'Validation error', details: error.errors });
+                return;
+            }
             reply.code(500).send({ error: error.message });
         }
     });

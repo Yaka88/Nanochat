@@ -9,12 +9,20 @@ class Api {
     defaultValue: _defaultBaseUrl,
   );
 
+  static Uri get _baseUri => Uri.parse(baseUrl);
+
+  static String get socketUrl {
+    final scheme = _baseUri.scheme;
+    final host = _baseUri.host;
+    final port = _baseUri.hasPort ? ':${_baseUri.port}' : '';
+    return '$scheme://$host$port';
+  }
+
   static String resolveFileUrl(String url) {
     if (url.startsWith('http://') || url.startsWith('https://')) {
       return url;
     }
-    final uri = Uri.parse(baseUrl);
-    final origin = '${uri.scheme}://${uri.host}${uri.hasPort ? ':${uri.port}' : ''}';
+    final origin = socketUrl;
     return '$origin$url';
   }
 

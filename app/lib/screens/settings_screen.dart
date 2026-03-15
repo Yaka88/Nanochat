@@ -46,8 +46,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     // Emit explicit logout so server marks us offline
     final socket = context.read<SocketProvider>();
-    socket.emitLogout();
-    await Future.delayed(const Duration(milliseconds: 300));
+    await socket.emitLogout();
     socket.disconnect();
     await auth.logout();
     if (mounted) {

@@ -23,18 +23,22 @@ async function main() {
     console.log('✅ System config created');
 
     // Create default admin
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    if (!adminPassword || adminPassword.trim() === '') {
+        throw new Error('ADMIN_PASSWORD is required to seed admin account');
+    }
+    const adminUsername = process.env.ADMIN_USERNAME || 'admin';
     const passwordHash = await bcrypt.hash(adminPassword, 10);
 
     await prisma.admin.upsert({
-        where: { username: 'admin' },
+        where: { username: adminUsername },
         update: { passwordHash },
         create: {
-            username: 'admin',
+            username: adminUsername,
             passwordHash,
         },
     });
-    console.log('✅ Admin user created (username: admin)');
+    console.log(`✅ Admin user created (username: ${adminUsername})`);
 
     console.log('🎉 Database seeding completed');
 }

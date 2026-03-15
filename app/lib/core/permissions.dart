@@ -1,8 +1,7 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-/// Centralized permission helper for iOS hardware access.
+/// Centralized permission helper for camera/mic access.
 class Permissions {
   Permissions._();
 
@@ -10,8 +9,6 @@ class Permissions {
   /// Returns `true` if both are granted.
   static Future<bool> requestCallPermissions(BuildContext context,
       {required bool isVideo}) async {
-    if (!Platform.isIOS) return true; // Android handled by plugin manifest
-
     final permissions = <Permission>[Permission.microphone];
     if (isVideo) permissions.add(Permission.camera);
 
@@ -32,8 +29,6 @@ class Permissions {
 
   /// Request camera permission for QR scanner.
   static Future<bool> requestCameraPermission(BuildContext context) async {
-    if (!Platform.isIOS) return true;
-
     final status = await Permission.camera.request();
     if (!status.isGranted) {
       if (context.mounted) {

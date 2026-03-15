@@ -19,6 +19,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _loading = false;
   String? _error;
 
+  @override
+  void dispose() {
+    _emailCtrl.dispose();
+    _passCtrl.dispose();
+    _confirmCtrl.dispose();
+    _nickCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _register() async {
     final t = (String k) => AppL10n.t(context, k);
     if (_emailCtrl.text.isEmpty ||
