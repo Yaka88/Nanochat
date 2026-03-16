@@ -80,6 +80,7 @@ void onStart(ServiceInstance service) async {
       case Event.actionCallAccept:
         final callerUserId = event.body['extra']['callerUserId'];
         socket.emit('call:accept', {'targetUserId': callerUserId});
+        await FlutterCallkitIncoming.endAllCalls();
         break;
       case Event.actionCallDecline:
         final callerUserId = event.body['extra']['callerUserId'];
@@ -88,6 +89,11 @@ void onStart(ServiceInstance service) async {
       default:
         break;
     }
+  });
+
+  // When the call was answered on another device, stop ringing here
+  socket.on('call:answered_elsewhere', (_) async {
+    await FlutterCallkitIncoming.endAllCalls();
   });
 
   socket.on('force_logout', (_) {

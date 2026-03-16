@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:uuid/uuid.dart';
 
 class LocalStorage {
   static const _keyToken = 'auth_token';
@@ -30,6 +31,17 @@ class LocalStorage {
 
   static Future<void> setDeviceId(String id) async =>
       (await _prefs).setString(_keyDeviceId, id);
+
+  /// Returns the stored device ID, or generates a new UUID v4 and persists it.
+  static Future<String> getOrCreateDeviceId() async {
+    final prefs = await _prefs;
+    var id = prefs.getString(_keyDeviceId);
+    if (id == null || id.isEmpty) {
+      id = const Uuid().v4();
+      await prefs.setString(_keyDeviceId, id);
+    }
+    return id;
+  }
 
   // Is Registered (Host)
   static Future<bool> getIsRegistered() async =>

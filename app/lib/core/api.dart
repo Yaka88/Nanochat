@@ -70,20 +70,24 @@ class Api {
     required String email,
     required String password,
     required String nickname,
+    String? deviceId,
   }) =>
       _request('POST', '/auth/register', body: {
         'email': email,
         'password': password,
         'nickname': nickname,
+        if (deviceId != null) 'deviceId': deviceId,
       });
 
   static Future<Map<String, dynamic>> login({
     required String email,
     required String password,
+    String? deviceId,
   }) =>
       _request('POST', '/auth/login', body: {
         'email': email,
         'password': password,
+        if (deviceId != null) 'deviceId': deviceId,
       });
 
   static Future<Map<String, dynamic>> loginById({
@@ -98,10 +102,12 @@ class Api {
   static Future<Map<String, dynamic>> upgradeToRegistered({
     required String email,
     required String password,
+    String? deviceId,
   }) =>
       _request('POST', '/auth/upgrade', body: {
         'email': email,
         'password': password,
+        if (deviceId != null) 'deviceId': deviceId,
       });
 
   static Future<Map<String, dynamic>> resendVerificationEmail() =>

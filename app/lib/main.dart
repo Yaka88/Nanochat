@@ -8,7 +8,6 @@ import 'core/l10n.dart';
 import 'core/background_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/welcome_screen.dart';
-import 'screens/call_screen.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_callkit_incoming/entities/entities.dart';
 
@@ -36,21 +35,35 @@ class _NanochatAppState extends State<NanochatApp> {
 
   void _setupCallKitListener() {
     FlutterCallkitIncoming.onEvent.listen((event) {
-      if (event!.event == Event.actionCallAccept) {
+      if (event == null) return;
+
+      if (event.event == Event.actionCallAccept) {
         final body = event.body as Map<dynamic, dynamic>;
         final extra = body['extra'] as Map<dynamic, dynamic>? ?? {};
         final callerUserId = extra['callerUserId']?.toString() ?? '';
         final isVideo = extra['isVideo'] == true || extra['isVideo'] == 'true';
         final callerName = body['nameCaller']?.toString() ?? 'Unknown';
 
-        navigatorKey.currentState?.push(MaterialPageRoute(
-          builder: (_) => CallScreen(
-            targetUserId: callerUserId,
-            targetName: callerName,
-            isVideo: isVideo,
-            isIncoming: true,
-          ),
-        ));
+        // Avoid pushing a duplicate CallScreen if one is already displayed
+        final nav = navigatorKey.currentState;
+        if (nav == null) return;
+
+        // Check if the current route is already a CallScreen
+        bool isOnCallScreen = false;
+        nav.popUntil((route) {
+          if (route.settings.name == '/call') {
+            isOnCallScreen = true;
+          }
+          return true; // don't actually pop
+        });
+        if (isOnCallScreen) return;
+
+        nav.pushNamed('/call', arguments: {
+          'userId': callerUserId,
+          'name': callerName,
+          'isVideo': isVideo,
+          'isIncoming': true,
+        });
       }
     });
   }

@@ -48,10 +48,12 @@ class AuthProvider extends ChangeNotifier {
     required String password,
     required String nickname,
   }) async {
+    final deviceId = await LocalStorage.getOrCreateDeviceId();
     final data = await Api.register(
       email: email,
       password: password,
       nickname: nickname,
+      deviceId: deviceId,
     );
     await LocalStorage.setToken(data['token']);
     await LocalStorage.setUserId(data['user']['id']);
@@ -61,7 +63,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> login({required String email, required String password}) async {
-    final data = await Api.login(email: email, password: password);
+    final deviceId = await LocalStorage.getOrCreateDeviceId();
+    final data = await Api.login(email: email, password: password, deviceId: deviceId);
     await LocalStorage.setToken(data['token']);
     await LocalStorage.setUserId(data['user']['id']);
     await LocalStorage.setIsRegistered(true);
@@ -91,7 +94,8 @@ class AuthProvider extends ChangeNotifier {
     required String email,
     required String password,
   }) async {
-    final data = await Api.upgradeToRegistered(email: email, password: password);
+    final deviceId = await LocalStorage.getOrCreateDeviceId();
+    final data = await Api.upgradeToRegistered(email: email, password: password, deviceId: deviceId);
     await LocalStorage.setToken(data['token']);
     await LocalStorage.setIsRegistered(true);
     _user = User.fromJson(data['user']);

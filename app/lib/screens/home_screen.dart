@@ -13,8 +13,7 @@ import '../core/l10n.dart';
 import '../widgets/incoming_call_dialog.dart';
 import '../widgets/member_card.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
-import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
-import 'package:flutter_callkit_incoming/entities/entities.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,7 +30,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Timer? _ringTimer;
   bool _incomingDialogOpen = false;
   String? _pendingCallerUserId;
-  StreamSubscription<dynamic>? _callkitEventSub;
+  bool _incomingHandled = false;
   StreamSubscription<dynamic>? _callRequestSub;
   StreamSubscription<dynamic>? _callEndedSub;
   StreamSubscription<dynamic>? _forceLogoutSub;
@@ -80,14 +79,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _callRequestSub = socket.onCallRequestStream.listen((data) {
       if (!mounted) return;
       if (_incomingDialogOpen) return;
-      final callerUserId = data['fromUserId']?.toString() ?? '';
+      final callerUserId = data['callerUserId']?.toString() ?? '';
       final isVideo = data['isVideo'] == true || data['isVideo'] == 'true';
       if (callerUserId.isEmpty) return;
 
-      final callerName = _members.firstWhere(
-        (m) => m['userId'] == callerUserId,
-        orElse: () => {'nickname': 'Unknown'},
-      )['nickname'];
+      final callerName = _members
+        .cast<dynamic>()
+        .firstWhere(
+          (m) => m.userId == callerUserId,
+          orElse: () => null,
+        )?.nameInGroup ?? data['callerName']?.toString() ?? 'Unknown';
 
       // If this caller already cancelled, don't show incoming dialog
       if (_cancelledCallers.remove(callerUserId)) return;

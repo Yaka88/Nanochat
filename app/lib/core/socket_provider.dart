@@ -86,7 +86,6 @@ class SocketProvider extends ChangeNotifier {
     });
 
     // Call events
-    // Call events
     _socket!.on('call:request', (data) => _onCallRequestCtrl.add(data));
     _socket!.on('call:accept', (data) => _onCallAcceptedCtrl.add(data));
     _socket!.on('call:reject', (data) => _onCallRejectedCtrl.add(data));
@@ -249,5 +248,21 @@ class SocketProvider extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    disconnect();
+    _onCallRequestCtrl.close();
+    _onCallAcceptedCtrl.close();
+    _onCallRejectedCtrl.close();
+    _onCallEndedCtrl.close();
+    _onCallErrorCtrl.close();
+    _onSignalOfferCtrl.close();
+    _onSignalAnswerCtrl.close();
+    _onSignalIceCtrl.close();
+    _onNewMessageCtrl.close();
+    _onForceLogoutCtrl.close();
+    super.dispose();
   }
 }
