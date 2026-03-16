@@ -91,6 +91,8 @@ void onStart(ServiceInstance service) async {
     }
   });
 
+  StreamSubscription<dynamic>? stopSub;
+
   // When the call was answered on another device, stop ringing here
   socket.on('call:answered_elsewhere', (_) async {
     await FlutterCallkitIncoming.endAllCalls();
@@ -103,7 +105,6 @@ void onStart(ServiceInstance service) async {
     service.stopSelf();
   });
 
-  StreamSubscription<dynamic>? stopSub;
   stopSub = service.on('stopService').listen((event) {
     callKitSub.cancel();
     stopSub?.cancel();
