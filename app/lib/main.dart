@@ -12,10 +12,13 @@ import 'screens/welcome_screen.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_callkit_incoming/entities/entities.dart';
 
+import 'package:permission_handler/permission_handler.dart';
+
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Permission.ignoreBatteryOptimizations.request();
   await BackgroundServiceManager.initialize();
   runApp(const NanochatApp());
 }

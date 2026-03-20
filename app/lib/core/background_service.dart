@@ -64,6 +64,19 @@ void onStart(ServiceInstance service) async {
       ),
       duration: 30000,
       extra: <String, dynamic>{'callerUserId': callerUserId, 'isVideo': isVideo},
+      android: const AndroidParams(
+        isCustomNotification: true,
+        isShowLogo: false,
+        ringtonePath: 'system_ringtone_default',
+        backgroundColor: '#0955fa',
+        backgroundUrl: 'assets/test.png',
+        actionColor: '#4CAF50',
+        textColor: '#ffffff',
+        incomingCallNotificationChannelName: 'Incoming Call',
+        missedCallNotificationChannelName: 'Missed Call',
+        isShowFullLockedScreen: true,
+        isImportant: true,
+      ),
     );
     await FlutterCallkitIncoming.showCallkitIncoming(callKitParams);
   });
