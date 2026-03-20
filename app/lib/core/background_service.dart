@@ -8,6 +8,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:uuid/uuid.dart';
 import 'api.dart';
+import 'callkit_foreground.dart';
 import 'storage.dart';
 
 @pragma('vm:entry-point')
@@ -78,8 +79,9 @@ void onStart(ServiceInstance service) async {
   final callKitSub = FlutterCallkitIncoming.onEvent.listen((event) async {
     switch (event!.event) {
       case Event.actionCallAccept:
-        // Foreground-only accept: the in-app call UI is responsible
-        // for emitting call:accept after media initialization.
+        final callerUserId = event.body['extra']['callerUserId'];
+        await CallkitForeground.tryBringToForeground();
+        socket.emit('call:accept', {'targetUserId': callerUserId});
         await FlutterCallkitIncoming.endAllCalls();
         break;
       case Event.actionCallDecline:

@@ -15,16 +15,31 @@ class SocketProvider extends ChangeNotifier {
 
   /// Ensure there is an active socket connection before call signaling.
   /// Returns true when connected within timeout, otherwise false.
-  Future<bool> ensureConnected({Duration timeout = const Duration(seconds: 8)}) async {
+  Future<bool> ensureConnected({Duration timeout = const Duration(seconds: 20)}) async {
     if (isConnected) return true;
 
-    await connect();
+    if (_socket == null) {
+      await connect();
+    } else {
+      _socket!.connect();
+    }
     if (isConnected) return true;
 
     final startedAt = DateTime.now();
+    var tick = 0;
     while (DateTime.now().difference(startedAt) < timeout) {
       await Future.delayed(const Duration(milliseconds: 250));
       if (isConnected) return true;
+
+      tick++;
+      // Retry connect periodically while waiting.
+      if (tick % 8 == 0) {
+        if (_socket == null) {
+          await connect();
+        } else if (!(_socket!.connected)) {
+          _socket!.connect();
+        }
+      }
     }
 
     return false;

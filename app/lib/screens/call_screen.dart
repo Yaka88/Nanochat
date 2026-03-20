@@ -64,7 +64,11 @@ class _CallScreenState extends State<CallScreen> {
 
   Future<void> _init() async {
     try {
-      final ready = await _socketProvider.ensureConnected();
+      var ready = await _socketProvider.ensureConnected();
+      if (!ready) {
+        await _socketProvider.reconnect();
+        ready = await _socketProvider.ensureConnected(timeout: const Duration(seconds: 25));
+      }
       if (!ready) {
         throw Exception('signaling connection unavailable');
       }

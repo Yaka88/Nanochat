@@ -6,6 +6,7 @@ import 'core/auth_provider.dart';
 import 'core/socket_provider.dart';
 import 'core/l10n.dart';
 import 'core/background_service.dart';
+import 'core/callkit_foreground.dart';
 import 'screens/home_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
@@ -34,10 +35,12 @@ class _NanochatAppState extends State<NanochatApp> {
   }
 
   void _setupCallKitListener() {
-    FlutterCallkitIncoming.onEvent.listen((event) {
+    FlutterCallkitIncoming.onEvent.listen((event) async {
       if (event == null) return;
 
       if (event.event == Event.actionCallAccept) {
+        await CallkitForeground.tryBringToForeground();
+
         final body = event.body as Map<dynamic, dynamic>;
         final extra = body['extra'] as Map<dynamic, dynamic>? ?? {};
         final callerUserId = extra['callerUserId']?.toString() ?? '';
