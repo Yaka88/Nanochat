@@ -212,7 +212,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         if (socket.isConnected) {
           socket.refreshGroups();
         } else {
-          await socket.connect();
+          await socket.ensureConnected();
+          socket.refreshGroups();
         }
       }
 
@@ -351,8 +352,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       return MemberCard(
                         member: m,
                         isOnline: online,
-                        onVideo: online ? () => _onVideoCall(m) : null,
-                        onVoice: online ? () => _onVoiceCall(m) : null,
+                        onVideo: () => _onVideoCall(m),
+                        onVoice: () => _onVoiceCall(m),
                         onMessage: () => _onMessage(m),
                       );
                     },

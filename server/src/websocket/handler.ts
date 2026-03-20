@@ -384,8 +384,6 @@ export function setupWebSocket(io: Server) {
                         isVideo: data.isVideo ?? true,
                     });
                 }
-            } else {
-                socket.emit('call:error', { message: 'User is offline' });
             }
         });
 
@@ -560,37 +558,8 @@ export function setupWebSocket(io: Server) {
                 return;
             }
 
-            // Capture the groupIds for the deferred broadcast
-            const userGroupIds = [...groupIds];
-
-            // Grace period: wait 30 seconds before marking the user offline.
-            // If the user reconnects within this window the timer is cancelled
-            // in the 'connection' handler above, avoiding flicker.
-            const timer = setTimeout(async () => {
-                pendingOfflineTimers.delete(userId);
-
-                // If the user reconnected in the meantime, do nothing.
-                if (connectedUsers.has(userId)) return;
-
-                // Mark offline in DB
-                try {
-                    await prisma.user.update({
-                        where: { id: userId },
-                        data: { isOnline: false, lastOnlineAt: new Date() },
-                    });
-                } catch (error) {
-                    console.error(`Failed to set offline status for user ${userId}:`, error);
-                }
-
-                // Broadcast user:offline to all groups
-                if (ioRef) {
-                    for (const gid of userGroupIds) {
-                        ioRef.to(`group:${gid}`).emit('user:offline', { userId, groupId: gid });
-                    }
-                }
-            }, 30_000);
-
-            pendingOfflineTimers.set(userId, timer);
+            // Keep user online across transient/background disconnects.
+            // Online status is only turned off on explicit user:logout.
         });
     });
 }

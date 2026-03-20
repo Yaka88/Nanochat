@@ -79,6 +79,8 @@ void onStart(ServiceInstance service) async {
     switch (event!.event) {
       case Event.actionCallAccept:
         final callerUserId = event.body['extra']['callerUserId'];
+        // Wake and foreground app so user can proceed to in-app call UI.
+        await FlutterCallkitIncoming.backToForeground();
         socket.emit('call:accept', {'targetUserId': callerUserId});
         await FlutterCallkitIncoming.endAllCalls();
         break;

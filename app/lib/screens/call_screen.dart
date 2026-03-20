@@ -25,6 +25,13 @@ class CallScreen extends StatefulWidget {
 }
 
 class _CallScreenState extends State<CallScreen> {
+  static const int _defaultVideoWidth = 640;
+  static const int _defaultVideoHeight = 480;
+  static const int _defaultVideoFps = 24;
+  static const int _defaultVideoMaxBitrate = 1200000; // 1.2 Mbps
+  static const int _defaultVideoMinBitrate = 300000; // 300 kbps
+  static const int _defaultSdpBandwidthKbps = 1200;
+
   final _localRenderer = RTCVideoRenderer();
   final _remoteRenderer = RTCVideoRenderer();
   RTCPeerConnection? _pc;
@@ -57,6 +64,11 @@ class _CallScreenState extends State<CallScreen> {
 
   Future<void> _init() async {
     try {
+      final ready = await _socketProvider.ensureConnected();
+      if (!ready) {
+        throw Exception('signaling connection unavailable');
+      }
+
       await _localRenderer.initialize();
       await _remoteRenderer.initialize();
 
@@ -66,9 +78,9 @@ class _CallScreenState extends State<CallScreen> {
       'video': widget.isVideo
           ? {
               'facingMode': 'user',
-              'width': {'ideal': 1280},
-              'height': {'ideal': 720},
-              'frameRate': {'ideal': 30},
+              'width': {'ideal': _defaultVideoWidth},
+              'height': {'ideal': _defaultVideoHeight},
+              'frameRate': {'ideal': _defaultVideoFps},
             }
           : false,
     });
@@ -93,8 +105,8 @@ class _CallScreenState extends State<CallScreen> {
             params.encodings = [RTCRtpEncoding()];
           }
           for (final encoding in params.encodings!) {
-            encoding.maxBitrate = 2000000; // 2 Mbps
-            encoding.minBitrate = 500000;  // 500 kbps
+            encoding.maxBitrate = _defaultVideoMaxBitrate;
+            encoding.minBitrate = _defaultVideoMinBitrate;
           }
           await sender.setParameters(params);
         }
@@ -181,7 +193,7 @@ class _CallScreenState extends State<CallScreen> {
       );
       final answer = await _pc!.createAnswer();
       if (widget.isVideo) {
-        answer.sdp = _setVideoBandwidth(answer.sdp!, 2000);
+        answer.sdp = _setVideoBandwidth(answer.sdp!, _defaultSdpBandwidthKbps);
       }
       await _pc!.setLocalDescription(answer);
       _socketProvider.emit('signal:answer', {
@@ -252,8 +264,8 @@ class _CallScreenState extends State<CallScreen> {
           params.encodings = [RTCRtpEncoding()];
         }
         for (final encoding in params.encodings!) {
-          encoding.maxBitrate = 2000000; // 2 Mbps
-          encoding.minBitrate = 500000;  // 500 kbps
+          encoding.maxBitrate = _defaultVideoMaxBitrate;
+          encoding.minBitrate = _defaultVideoMinBitrate;
         }
         await sender.setParameters(params);
       }
@@ -287,7 +299,7 @@ class _CallScreenState extends State<CallScreen> {
     _offerCreated = true;
     final offer = await _pc!.createOffer();
     if (widget.isVideo) {
-      offer.sdp = _setVideoBandwidth(offer.sdp!, 2000);
+      offer.sdp = _setVideoBandwidth(offer.sdp!, _defaultSdpBandwidthKbps);
     }
     await _pc!.setLocalDescription(offer);
     _socketProvider.emit('signal:offer', {

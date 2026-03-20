@@ -7,10 +7,28 @@ import 'storage.dart';
 class SocketProvider extends ChangeNotifier {
   io.Socket? _socket;
   final Map<String, bool> _onlineStatus = {};
+  bool _hasPresenceSnapshot = false;
   List<Map<String, dynamic>>? _cachedIceServers;
   DateTime? _iceServersCachedAt;
 
-  bool isUserOnline(String userId) => _onlineStatus[userId] ?? false;
+  bool isUserOnline(String userId) => _onlineStatus[userId] ?? !_hasPresenceSnapshot;
+
+  /// Ensure there is an active socket connection before call signaling.
+  /// Returns true when connected within timeout, otherwise false.
+  Future<bool> ensureConnected({Duration timeout = const Duration(seconds: 8)}) async {
+    if (isConnected) return true;
+
+    await connect();
+    if (isConnected) return true;
+
+    final startedAt = DateTime.now();
+    while (DateTime.now().difference(startedAt) < timeout) {
+      await Future.delayed(const Duration(milliseconds: 250));
+      if (isConnected) return true;
+    }
+
+    return false;
+  }
 
   bool get isConnected => _socket?.connected == true;
 
@@ -23,6 +41,7 @@ class SocketProvider extends ChangeNotifier {
     }
 
     _onlineStatus.clear();
+    _hasPresenceSnapshot = false;
     _cachedIceServers = null;
 
     final token = await LocalStorage.getToken();
@@ -52,6 +71,7 @@ class SocketProvider extends ChangeNotifier {
     _socket!.on('presence:snapshot', (data) {
       final ids = (data is Map ? data['onlineUserIds'] : null) as List<dynamic>?;
       if (ids == null) return;
+      _hasPresenceSnapshot = true;
 
       // Build the set of currently-online user IDs from the snapshot
       final snapshotOnline = <String>{};
@@ -114,6 +134,7 @@ class SocketProvider extends ChangeNotifier {
     _socket?.dispose();
     _socket = null;
     _onlineStatus.clear();
+    _hasPresenceSnapshot = false;
     _cachedIceServers = null;
     _iceServersCachedAt = null;
   }
@@ -130,7 +151,7 @@ class SocketProvider extends ChangeNotifier {
   /// Use after login, registration, or group join to ensure fresh state.
   Future<void> reconnect() async {
     disconnect();
-    await connect();
+    await ensureConnected();
   }
 
   /// Tell the server we joined a new group so it adds us to the room.
@@ -244,7 +265,12 @@ class SocketProvider extends ChangeNotifier {
       // If we already have a status for this user, don't overwrite it;
       // the WebSocket presence events are more authoritative.
       if (!_onlineStatus.containsKey(userId)) {
-        _onlineStatus[userId] = m['isOnline'] ?? false;
+        final apiOnline = m['isOnline'] == true;
+        // Before first realtime snapshot arrives, avoid seeding 'false'
+        // from possibly stale API data to prevent false offline UI state.
+        if (apiOnline || _hasPresenceSnapshot) {
+          _onlineStatus[userId] = apiOnline;
+        }
       }
     }
     notifyListeners();
