@@ -34,13 +34,10 @@ class _NanochatAppState extends State<NanochatApp> {
   }
 
   void _setupCallKitListener() {
-    FlutterCallkitIncoming.onEvent.listen((event) async {
+    FlutterCallkitIncoming.onEvent.listen((event) {
       if (event == null) return;
 
       if (event.event == Event.actionCallAccept) {
-        // Ensure app is visible when accepting from lock screen/background.
-        await FlutterCallkitIncoming.backToForeground();
-
         final body = event.body as Map<dynamic, dynamic>;
         final extra = body['extra'] as Map<dynamic, dynamic>? ?? {};
         final callerUserId = extra['callerUserId']?.toString() ?? '';
