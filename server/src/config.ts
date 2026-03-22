@@ -67,4 +67,7 @@ export const config = {
     // Admin
     adminUsername: process.env.ADMIN_USERNAME || 'admin',
     adminPassword,
+
+    // FCM (Firebase Cloud Messaging) – push notifications
+    fcmServiceAccountPath: process.env.FCM_SERVICE_ACCOUNT_PATH || '',
 };

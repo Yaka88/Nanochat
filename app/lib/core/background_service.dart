@@ -161,7 +161,11 @@ class BackgroundServiceManager {
         foregroundServiceNotificationId: 888,
       ),
       iosConfiguration: IosConfiguration(
-        autoStart: true,
+        // iOS: Do NOT auto-start the background socket service.
+        // iOS aggressively kills background processes, making WebSocket
+        // connections unreliable. Instead, we rely on FCM push notifications
+        // (via APNs VoIP pushes) to wake the app and show incoming calls.
+        autoStart: false,
         onForeground: onStart,
         onBackground: onIosBackground,
       ),

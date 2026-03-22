@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { prisma } from '../db.js';
 import { config } from '../config.js';
+import { sendCallPush, initFirebase } from '../services/push.js';
 
 interface JwtPayload {
     id: string;
@@ -103,6 +104,9 @@ async function loadGroupIds(userId: string): Promise<string[]> {
 
 export function setupWebSocket(io: Server) {
     ioRef = io;
+
+    // Initialize Firebase for push notifications (fails gracefully if unconfigured)
+    initFirebase();
 
     // On (re)start, reset ALL users to offline.  Only users who actually
     // connect a WebSocket will be marked online.
@@ -214,17 +218,23 @@ export function setupWebSocket(io: Server) {
         }
 
         // Send current presence snapshot to the newly connected user.
-        // Query from DB because users stay online even without a socket.
-        const groupMates = await prisma.groupMember.findMany({
-            where: {
-                groupId: { in: groupIds },
-                userId: { not: userId },
-                user: { isOnline: true },
-            },
-            select: { userId: true },
-            distinct: ['userId'],
-        });
-        const onlineUserIds = groupMates.map((m) => m.userId);
+        // Use the in-memory connectedUsers map (authoritative real-time source)
+        // instead of DB isOnline field which can be stale.
+        const onlineUserIds: string[] = [];
+        for (const groupId of groupIds) {
+            const groupMembers = await prisma.groupMember.findMany({
+                where: {
+                    groupId,
+                    userId: { not: userId },
+                },
+                select: { userId: true },
+            });
+            for (const gm of groupMembers) {
+                if (connectedUsers.has(gm.userId) && !onlineUserIds.includes(gm.userId)) {
+                    onlineUserIds.push(gm.userId);
+                }
+            }
+        }
 
         socket.emit('presence:snapshot', { onlineUserIds });
 
@@ -314,17 +324,23 @@ export function setupWebSocket(io: Server) {
                 }
             }
 
-            // Send full presence snapshot (from DB)
-            const allGroupMates = await prisma.groupMember.findMany({
-                where: {
-                    groupId: { in: groupIds },
-                    userId: { not: userId },
-                    user: { isOnline: true },
-                },
-                select: { userId: true },
-                distinct: ['userId'],
-            });
-            socket.emit('presence:snapshot', { onlineUserIds: allGroupMates.map((m) => m.userId) });
+            // Send full presence snapshot using in-memory connectedUsers (authoritative)
+            const refreshOnlineIds: string[] = [];
+            for (const gid of groupIds) {
+                const gMembers = await prisma.groupMember.findMany({
+                    where: {
+                        groupId: gid,
+                        userId: { not: userId },
+                    },
+                    select: { userId: true },
+                });
+                for (const gm of gMembers) {
+                    if (connectedUsers.has(gm.userId) && !refreshOnlineIds.includes(gm.userId)) {
+                        refreshOnlineIds.push(gm.userId);
+                    }
+                }
+            }
+            socket.emit('presence:snapshot', { onlineUserIds: refreshOnlineIds });
         });
 
         // ========================================
@@ -370,19 +386,30 @@ export function setupWebSocket(io: Server) {
                 return;
             }
 
+            const caller = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { nickname: true },
+            });
+            const callerName = caller?.nickname || 'Unknown';
+            const isVideo = data.isVideo ?? true;
+
             const targetSockets = connectedUsers.get(data.targetUserId);
             if (targetSockets && targetSockets.size > 0) {
-                const caller = await prisma.user.findUnique({
-                    where: { id: userId },
-                    select: { nickname: true },
-                });
-
                 for (const target of targetSockets.values()) {
                     target.socket.emit('call:request', {
                         callerUserId: userId,
-                        callerName: caller?.nickname || 'Unknown',
-                        isVideo: data.isVideo ?? true,
+                        callerName,
+                        isVideo,
                     });
+                }
+                // Also send push as a safety net – the WebSocket may be stale
+                // (connected in memory but the device dropped it).
+                sendCallPush(data.targetUserId, callerName, userId, isVideo).catch(() => {});
+            } else {
+                // No active WebSocket – push notification is the only way
+                const pushed = await sendCallPush(data.targetUserId, callerName, userId, isVideo);
+                if (!pushed) {
+                    socket.emit('call:error', { message: 'User is offline and unreachable' });
                 }
             }
         });
@@ -559,7 +586,36 @@ export function setupWebSocket(io: Server) {
             }
 
             // Keep user online across transient/background disconnects.
-            // Online status is only turned off on explicit user:logout.
+            // Use a delayed timer: if the user doesn't reconnect within 15 seconds,
+            // mark them offline in DB and broadcast user:offline.
+            const offlineTimer = setTimeout(async () => {
+                pendingOfflineTimers.delete(userId);
+
+                // If the user reconnected in the meantime, skip
+                if (connectedUsers.has(userId)) return;
+
+                // Mark offline in DB
+                try {
+                    await prisma.user.update({
+                        where: { id: userId },
+                        data: { isOnline: false, lastOnlineAt: new Date() },
+                    });
+                } catch (error) {
+                    console.error(`Failed to set offline status for user ${userId}:`, error);
+                }
+
+                // Broadcast offline to all groups
+                for (const groupId of groupIds) {
+                    io.to(`group:${groupId}`).emit('user:offline', {
+                        userId,
+                        groupId,
+                    });
+                }
+
+                console.log(`⏰ User ${userId} marked offline after 15s grace period`);
+            }, 15_000);
+
+            pendingOfflineTimers.set(userId, offlineTimer);
         });
     });
 }

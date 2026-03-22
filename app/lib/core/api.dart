@@ -241,6 +241,16 @@ class Api {
 
   static Future<Map<String, dynamic>> markRead(String messageId) =>
       _request('PUT', '/messages/$messageId/read');
+
+  // Push notification token
+  static Future<Map<String, dynamic>> updateDeviceToken({
+    required String token,
+    required String platform,
+  }) =>
+      _request('PUT', '/auth/device-token', body: {
+        'token': token,
+        'platform': platform,
+      });
 }
 
 class ApiException implements Exception {

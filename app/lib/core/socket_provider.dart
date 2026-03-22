@@ -276,16 +276,18 @@ class SocketProvider extends ChangeNotifier {
       if (m is! Map) continue;
       final userId = (m['userId'] ?? m['id'])?.toString();
       if (userId == null || userId.isEmpty) continue;
-      // Only use API data to seed users we haven't heard from via WebSocket.
-      // If we already have a status for this user, don't overwrite it;
-      // the WebSocket presence events are more authoritative.
-      if (!_onlineStatus.containsKey(userId)) {
-        final apiOnline = m['isOnline'] == true;
-        // Before first realtime snapshot arrives, avoid seeding 'false'
-        // from possibly stale API data to prevent false offline UI state.
-        if (apiOnline || _hasPresenceSnapshot) {
+      final apiOnline = m['isOnline'] == true;
+
+      if (_hasPresenceSnapshot) {
+        // After we've received a real-time snapshot, always trust API data
+        // for users not yet tracked (e.g. members of a different group).
+        if (!_onlineStatus.containsKey(userId)) {
           _onlineStatus[userId] = apiOnline;
         }
+      } else {
+        // Before first snapshot, seed all users from API data.
+        // This is the best information we have at this point.
+        _onlineStatus[userId] = apiOnline;
       }
     }
     notifyListeners();

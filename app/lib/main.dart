@@ -7,10 +7,13 @@ import 'core/socket_provider.dart';
 import 'core/l10n.dart';
 import 'core/background_service.dart';
 import 'core/callkit_foreground.dart';
+import 'core/push_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_callkit_incoming/entities/entities.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'package:permission_handler/permission_handler.dart';
 
@@ -18,8 +21,19 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase first (required for FCM push notifications)
+  await Firebase.initializeApp();
+
+  // Register FCM background message handler
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
   await Permission.ignoreBatteryOptimizations.request();
   await BackgroundServiceManager.initialize();
+
+  // Initialize push notification service (FCM token registration)
+  await PushService.initialize();
+
   runApp(const NanochatApp());
 }
 

@@ -20,6 +20,7 @@ model User {
   isOnline        Boolean   @default(false) @map("is_online")
   isDisabled      Boolean   @default(false) @map("is_disabled")
   deviceToken     String?   @map("device_token")
+  pushPlatform    String?   @map("push_platform")
   deviceId        String?   @map("device_id")
   createdAt       DateTime  @default(now()) @map("created_at")
   lastOnlineAt    DateTime? @map("last_online_at")

@@ -4,6 +4,7 @@ import path from 'path';
 import { registerUser, verifyEmail, loginWithEmail, loginWithId, getUserById, upgradeMemberToRegistered, resendVerificationEmailForUser } from '../services/auth.js';
 import { verifyToken } from '../middleware/auth.js';
 import { saveFile } from '../services/storage.js';
+import { saveDeviceToken } from '../services/push.js';
 import { prisma } from '../db.js';
 
 const registerSchema = z.object({
@@ -278,6 +279,27 @@ export async function authRoutes(fastify: FastifyInstance) {
             reply.send({ success: true, user });
         } catch (error: any) {
             reply.code(500).send({ error: error.message });
+        }
+    });
+
+    // PUT /api/auth/device-token
+    // Save the FCM push notification token for this user
+    const deviceTokenSchema = z.object({
+        token: z.string().min(1),
+        platform: z.enum(['android', 'ios']),
+    });
+
+    fastify.put('/device-token', { preHandler: [verifyToken] }, async (request: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const body = deviceTokenSchema.parse(request.body);
+            await saveDeviceToken(request.user.id, body.token, body.platform);
+            reply.send({ success: true });
+        } catch (error: any) {
+            if (error.name === 'ZodError') {
+                reply.code(400).send({ error: 'Validation error', details: error.errors });
+            } else {
+                reply.code(500).send({ error: error.message });
+            }
         }
     });
 }

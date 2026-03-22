@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../core/api.dart';
 import '../core/storage.dart';
+import '../core/push_service.dart';
 import '../models/user.dart';
 
 class AuthProvider extends ChangeNotifier {
@@ -20,6 +21,8 @@ class AuthProvider extends ChangeNotifier {
       if (token != null) {
         final data = await Api.getMe();
         _user = User.fromJson(data['user']);
+        // Re-register push token on auto-login (token may have changed)
+        PushService.registerToken();
       }
     } catch (_) {
       // Token expired or invalid, try device login
@@ -37,6 +40,8 @@ class AuthProvider extends ChangeNotifier {
         final data = await Api.loginById(userId: userId, deviceId: deviceId);
         await LocalStorage.setToken(data['token']);
         _user = User.fromJson(data['user']);
+        // Register push token with server
+        PushService.registerToken();
       } catch (_) {
         await LocalStorage.clear();
       }
@@ -60,6 +65,8 @@ class AuthProvider extends ChangeNotifier {
     await LocalStorage.setIsRegistered(true);
     _user = User.fromJson(data['user']);
     notifyListeners();
+    // Register push token with server
+    PushService.registerToken();
   }
 
   Future<void> login({required String email, required String password}) async {
@@ -70,6 +77,8 @@ class AuthProvider extends ChangeNotifier {
     await LocalStorage.setIsRegistered(true);
     _user = User.fromJson(data['user']);
     notifyListeners();
+    // Register push token with server
+    PushService.registerToken();
   }
 
   Future<void> loginById({
@@ -82,6 +91,8 @@ class AuthProvider extends ChangeNotifier {
     await LocalStorage.setDeviceId(deviceId);
     _user = User.fromJson(data['user']);
     notifyListeners();
+    // Register push token with server
+    PushService.registerToken();
   }
 
   Future<void> logout() async {
