@@ -37,8 +37,8 @@ dependencies:
   flutter_callkit_incoming: ^3.0.0
   flutter_local_notifications: ^21.0.0
   # Firebase (push notifications for incoming calls)
-  firebase_core: ^3.6.0
-  firebase_messaging: ^15.1.0
+  firebase_core: 3.5.0
+  firebase_messaging: 15.0.3
 
 dev_dependencies:
   flutter_test:
