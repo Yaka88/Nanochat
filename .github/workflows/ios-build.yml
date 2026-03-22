@@ -23,6 +23,17 @@ jobs:
       - name: Flutter Pub Get
         run: flutter pub get
 
+      - name: Add GoogleService-Info.plist
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          if [ -n "$GOOGLE_SERVICE_INFO_PLIST" ]; then
+            echo "$GOOGLE_SERVICE_INFO_PLIST" > ios/Runner/GoogleService-Info.plist
+            echo "✅ Created GoogleService-Info.plist from secret"
+          else
+            echo "⚠️ Secret GOOGLE_SERVICE_INFO_PLIST is not set. App might crash on startup."
+          fi
+
       - name: Build iOS (No Sign)
         run: flutter build ios --release --no-codesign
 

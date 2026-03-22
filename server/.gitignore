@@ -4,3 +4,6 @@ dist/
 uploads/*
 !uploads/.gitkeep
 *.log
+
+# Firebase credentials
+firebase-service-account.json
