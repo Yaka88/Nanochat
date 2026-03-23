@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
+import 'package:flutter_callkit_incoming/entities/entities.dart';
+import 'package:uuid/uuid.dart';
 import '../core/api.dart';
 import '../core/auth_provider.dart';
 import '../core/permissions.dart';
@@ -28,6 +31,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<GroupMember> _members = [];
   Group? _currentGroup;
   bool _loading = true;
+  bool _socketBootstrapped = false;
+  AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
   Timer? _ringTimer;
   bool _incomingDialogOpen = false;
   String? _pendingCallerUserId;
@@ -79,7 +84,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
     _callRequestSub = socket.onCallRequestStream.listen((data) {
       if (!mounted) return;
-      if (_incomingDialogOpen) return;
       final callerUserId = data['callerUserId']?.toString() ?? '';
       final isVideo = data['isVideo'] == true || data['isVideo'] == 'true';
       if (callerUserId.isEmpty) return;
@@ -93,6 +97,47 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
       // If this caller already cancelled, don't show incoming dialog
       if (_cancelledCallers.remove(callerUserId)) return;
+
+      // App is in background/inactive: show a system-level incoming call UI.
+      if (_lifecycleState != AppLifecycleState.resumed) {
+        final callKitParams = CallKitParams(
+          id: const Uuid().v4(),
+          nameCaller: callerName,
+          appName: 'Nanochat',
+          handle: 'Incoming Call',
+          type: isVideo ? 1 : 0,
+          textAccept: 'Accept',
+          textDecline: 'Decline',
+          missedCallNotification: const NotificationParams(
+            showNotification: true,
+            isShowCallback: true,
+            subtitle: 'Missed call',
+            callbackText: 'Call back',
+          ),
+          duration: 30000,
+          extra: <String, dynamic>{
+            'callerUserId': callerUserId,
+            'isVideo': isVideo,
+          },
+          android: const AndroidParams(
+            isCustomNotification: true,
+            isShowLogo: false,
+            ringtonePath: 'system_ringtone_default',
+            backgroundColor: '#0955fa',
+            backgroundUrl: 'assets/test.png',
+            actionColor: '#4CAF50',
+            textColor: '#ffffff',
+            incomingCallNotificationChannelName: 'Incoming Call',
+            missedCallNotificationChannelName: 'Missed Call',
+            isShowFullLockedScreen: true,
+            isImportant: true,
+          ),
+        );
+        FlutterCallkitIncoming.showCallkitIncoming(callKitParams);
+        return;
+      }
+
+      if (_incomingDialogOpen) return;
 
       _incomingDialogOpen = true;
       _pendingCallerUserId = callerUserId;
@@ -178,6 +223,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycleState = state;
     if (state == AppLifecycleState.resumed) {
       final socket = context.read<SocketProvider>();
       // Always reconnect on resume to get a fresh socket + presence snapshot.
@@ -193,6 +239,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Future<void> _loadData() async {
     setState(() => _loading = true);
     try {
+      // First enter after login/install: force a fresh socket handshake so
+      // call signaling always uses the latest auth/device state.
+      if (mounted && !_socketBootstrapped) {
+        await context.read<SocketProvider>().reconnect();
+        _socketBootstrapped = true;
+      }
+
       final res = await Api.getGroups();
       final groups =
           (res['groups'] as List).map((g) => Group.fromJson(g)).toList();
