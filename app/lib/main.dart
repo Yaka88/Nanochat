@@ -14,6 +14,7 @@ import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_callkit_incoming/entities/entities.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'dart:async';
 
 import 'package:permission_handler/permission_handler.dart';
 
@@ -41,32 +42,14 @@ void main() async {
     }
   }
 
-  try {
-    await Permission.ignoreBatteryOptimizations.request();
-  } catch (e) {
-    debugPrint('[Main] Battery optimization permission failed: $e');
-  }
-
-  try {
-    await BackgroundServiceManager.initialize();
-  } catch (e) {
-    debugPrint('[Main] Background service init failed: $e');
-  }
-
-  // Initialize push notification service (FCM token registration)
-  if (firebaseReady) {
-    try {
-      await PushService.initialize();
-    } catch (e) {
-      debugPrint('[Main] Push service init failed: $e');
-    }
-  }
-
-  runApp(const NanochatApp());
+  // Start UI first to avoid blocking app launch on vendor-specific permission pages.
+  runApp(NanochatApp(firebaseReady: firebaseReady));
 }
 
 class NanochatApp extends StatefulWidget {
-  const NanochatApp({super.key});
+  const NanochatApp({super.key, required this.firebaseReady});
+
+  final bool firebaseReady;
 
   @override
   State<NanochatApp> createState() => _NanochatAppState();
@@ -77,6 +60,40 @@ class _NanochatAppState extends State<NanochatApp> {
   void initState() {
     super.initState();
     _setupCallKitListener();
+    unawaited(_bootstrapServices());
+  }
+
+  Future<void> _bootstrapServices() async {
+    try {
+      await Permission.ignoreBatteryOptimizations.request().timeout(
+        const Duration(seconds: 8),
+      );
+    } on TimeoutException {
+      debugPrint('[Main] Battery optimization permission request timed out');
+    } catch (e) {
+      debugPrint('[Main] Battery optimization permission failed: $e');
+    }
+
+    try {
+      await BackgroundServiceManager.initialize().timeout(
+        const Duration(seconds: 10),
+      );
+    } on TimeoutException {
+      debugPrint('[Main] Background service init timed out');
+    } catch (e) {
+      debugPrint('[Main] Background service init failed: $e');
+    }
+
+    // Initialize push notification service (FCM token registration)
+    if (widget.firebaseReady) {
+      try {
+        await PushService.initialize().timeout(const Duration(seconds: 10));
+      } on TimeoutException {
+        debugPrint('[Main] Push service init timed out');
+      } catch (e) {
+        debugPrint('[Main] Push service init failed: $e');
+      }
+    }
   }
 
   void _setupCallKitListener() {
