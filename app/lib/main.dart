@@ -22,17 +22,45 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  bool firebaseReady = false;
+
   // Initialize Firebase first (required for FCM push notifications)
-  await Firebase.initializeApp();
+  try {
+    await Firebase.initializeApp();
+    firebaseReady = true;
+  } catch (e) {
+    debugPrint('[Main] Firebase init failed: $e');
+  }
 
-  // Register FCM background message handler
-  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  // Register FCM background message handler (only if Firebase is ready)
+  if (firebaseReady) {
+    try {
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    } catch (e) {
+      debugPrint('[Main] FCM background handler registration failed: $e');
+    }
+  }
 
-  await Permission.ignoreBatteryOptimizations.request();
-  await BackgroundServiceManager.initialize();
+  try {
+    await Permission.ignoreBatteryOptimizations.request();
+  } catch (e) {
+    debugPrint('[Main] Battery optimization permission failed: $e');
+  }
+
+  try {
+    await BackgroundServiceManager.initialize();
+  } catch (e) {
+    debugPrint('[Main] Background service init failed: $e');
+  }
 
   // Initialize push notification service (FCM token registration)
-  await PushService.initialize();
+  if (firebaseReady) {
+    try {
+      await PushService.initialize();
+    } catch (e) {
+      debugPrint('[Main] Push service init failed: $e');
+    }
+  }
 
   runApp(const NanochatApp());
 }
