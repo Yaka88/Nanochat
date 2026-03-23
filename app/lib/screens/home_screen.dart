@@ -4,9 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
-import 'package:flutter_callkit_incoming/entities/entities.dart';
-import 'package:uuid/uuid.dart';
 import '../core/api.dart';
 import '../core/auth_provider.dart';
 import '../core/permissions.dart';
@@ -47,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(LocalStorage.setAppForeground(true));
     _setupSocketHandlers();
     _loadData();
   }
@@ -98,44 +96,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // If this caller already cancelled, don't show incoming dialog
       if (_cancelledCallers.remove(callerUserId)) return;
 
-      // App is in background/inactive: show a system-level incoming call UI.
-      if (_lifecycleState != AppLifecycleState.resumed) {
-        final callKitParams = CallKitParams(
-          id: const Uuid().v4(),
-          nameCaller: callerName,
-          appName: 'Nanochat',
-          handle: 'Incoming Call',
-          type: isVideo ? 1 : 0,
-          textAccept: 'Accept',
-          textDecline: 'Decline',
-          missedCallNotification: const NotificationParams(
-            showNotification: true,
-            isShowCallback: true,
-            subtitle: 'Missed call',
-            callbackText: 'Call back',
-          ),
-          duration: 30000,
-          extra: <String, dynamic>{
-            'callerUserId': callerUserId,
-            'isVideo': isVideo,
-          },
-          android: const AndroidParams(
-            isCustomNotification: true,
-            isShowLogo: false,
-            ringtonePath: 'system_ringtone_default',
-            backgroundColor: '#0955fa',
-            backgroundUrl: 'assets/test.png',
-            actionColor: '#4CAF50',
-            textColor: '#ffffff',
-            incomingCallNotificationChannelName: 'Incoming Call',
-            missedCallNotificationChannelName: 'Missed Call',
-            isShowFullLockedScreen: true,
-            isImportant: true,
-          ),
-        );
-        FlutterCallkitIncoming.showCallkitIncoming(callKitParams);
-        return;
-      }
+      // Background incoming UI is handled by BackgroundService.
+      if (_lifecycleState != AppLifecycleState.resumed) return;
 
       if (_incomingDialogOpen) return;
 
@@ -224,6 +186,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _lifecycleState = state;
+    unawaited(LocalStorage.setAppForeground(state == AppLifecycleState.resumed));
     if (state == AppLifecycleState.resumed) {
       final socket = context.read<SocketProvider>();
       // Always reconnect on resume to get a fresh socket + presence snapshot.

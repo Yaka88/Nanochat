@@ -41,6 +41,12 @@ void onStart(ServiceInstance service) async {
   });
 
   socket.on('call:request', (data) async {
+    final appForeground = await LocalStorage.isAppForeground();
+    if (appForeground) {
+      // Foreground UI is handled by HomeScreen's in-app dialog.
+      return;
+    }
+
     final callerName = (data['callerName'] ?? 'Unknown') as String;
     final callerUserId = (data['callerUserId'] ?? '') as String;
     final isVideo = (data['isVideo'] ?? true) as bool;

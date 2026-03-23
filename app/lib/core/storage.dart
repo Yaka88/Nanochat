@@ -7,6 +7,7 @@ class LocalStorage {
   static const _keyDeviceId = 'device_id';
   static const _keyIsRegistered = 'is_registered';
   static const _keyLastGroupId = 'last_group_id';
+    static const _keyAppForeground = 'app_foreground';
 
   static Future<SharedPreferences> get _prefs =>
       SharedPreferences.getInstance();
@@ -56,6 +57,13 @@ class LocalStorage {
 
   static Future<void> setLastGroupId(String id) async =>
       (await _prefs).setString(_keyLastGroupId, id);
+
+  // App lifecycle state (shared between main isolate and background service)
+  static Future<bool> isAppForeground() async =>
+      (await _prefs).getBool(_keyAppForeground) ?? false;
+
+  static Future<void> setAppForeground(bool val) async =>
+      (await _prefs).setBool(_keyAppForeground, val);
 
   // Clear all
   static Future<void> clear() async => (await _prefs).clear();
