@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.nanochat"
+    namespace = "cn.bluelaser.nanochat"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
