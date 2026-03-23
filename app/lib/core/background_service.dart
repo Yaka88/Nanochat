@@ -129,7 +129,10 @@ void onStart(ServiceInstance service) async {
 }
 
 class BackgroundServiceManager {
+  static bool _configured = false;
+
   static Future<void> initialize() async {
+    if (_configured) return;
     final service = FlutterBackgroundService();
 
     // Notification channel for Android Foreground Service
@@ -170,6 +173,25 @@ class BackgroundServiceManager {
         onBackground: onIosBackground,
       ),
     );
+
+    _configured = true;
+  }
+
+  /// Ensure the Android foreground service is running.
+  /// Safe to call repeatedly after login/app resume.
+  static Future<void> ensureStarted() async {
+    final service = FlutterBackgroundService();
+    await initialize();
+    final running = await service.isRunning();
+    if (!running) {
+      await service.startService();
+    }
+  }
+
+  /// Ask the background isolate to stop itself.
+  static Future<void> stop() async {
+    final service = FlutterBackgroundService();
+    service.invoke('stopService');
   }
 
   @pragma('vm:entry-point')

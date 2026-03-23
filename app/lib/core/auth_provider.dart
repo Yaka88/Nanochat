@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/api.dart';
+import '../core/background_service.dart';
 import '../core/storage.dart';
 import '../core/push_service.dart';
 import '../models/user.dart';
@@ -23,6 +24,7 @@ class AuthProvider extends ChangeNotifier {
         _user = User.fromJson(data['user']);
         // Re-register push token on auto-login (token may have changed)
         PushService.registerToken();
+        await BackgroundServiceManager.ensureStarted();
       }
     } catch (_) {
       // Token expired or invalid, try device login
@@ -42,6 +44,7 @@ class AuthProvider extends ChangeNotifier {
         _user = User.fromJson(data['user']);
         // Register push token with server
         PushService.registerToken();
+        await BackgroundServiceManager.ensureStarted();
       } catch (_) {
         await LocalStorage.clear();
       }
@@ -67,6 +70,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     // Register push token with server
     PushService.registerToken();
+    await BackgroundServiceManager.ensureStarted();
   }
 
   Future<void> login({required String email, required String password}) async {
@@ -79,6 +83,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     // Register push token with server
     PushService.registerToken();
+    await BackgroundServiceManager.ensureStarted();
   }
 
   Future<void> loginById({
@@ -93,9 +98,11 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     // Register push token with server
     PushService.registerToken();
+    await BackgroundServiceManager.ensureStarted();
   }
 
   Future<void> logout() async {
+    await BackgroundServiceManager.stop();
     await LocalStorage.clear();
     _user = null;
     notifyListeners();
