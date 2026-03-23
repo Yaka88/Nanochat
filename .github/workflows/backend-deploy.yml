@@ -1,8 +1,5 @@
 name: Backend Deploy
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 on:
   push:
     branches:
@@ -17,7 +14,7 @@ jobs:
     
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v0.1.7

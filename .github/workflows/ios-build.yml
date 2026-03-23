@@ -1,8 +1,5 @@
 name: iOS Build & Test
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 on:
   workflow_dispatch:
 
@@ -16,7 +13,7 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -47,7 +44,7 @@ jobs:
           zip -r Nanochat.ipa Payload
           
       - name: Upload IPA Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: nanochat-ios-ipa
           path: app/Nanochat.ipa
