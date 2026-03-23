@@ -6,7 +6,33 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+import java.util.Properties
+
+val envVersionCode = System.getenv("NANOCHAT_VERSION_CODE")?.toIntOrNull()
+val autoVersionCode = (System.currentTimeMillis() / 1000L).toInt()
+val keyPropsFile = rootProject.file("key.properties")
+val keyProps = Properties()
+if (keyPropsFile.exists()) {
+    keyProps.load(keyPropsFile.inputStream())
+}
+val hasUnifiedSigning = keyPropsFile.exists() &&
+    keyProps.getProperty("storeFile") != null &&
+    keyProps.getProperty("storePassword") != null &&
+    keyProps.getProperty("keyAlias") != null &&
+    keyProps.getProperty("keyPassword") != null
+
 android {
+        signingConfigs {
+            if (hasUnifiedSigning) {
+                create("unified") {
+                    storeFile = file(keyProps.getProperty("storeFile"))
+                    storePassword = keyProps.getProperty("storePassword")
+                    keyAlias = keyProps.getProperty("keyAlias")
+                    keyPassword = keyProps.getProperty("keyPassword")
+                }
+            }
+        }
+
     namespace = "cn.bluelaser.nanochat"
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
@@ -28,15 +54,24 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
+        // Keep versionCode increasing so Android can install over old builds.
+        // You can pin it in CI with env NANOCHAT_VERSION_CODE.
+        versionCode = envVersionCode ?: autoVersionCode
         versionName = "1.0.1"
     }
 
     buildTypes {
+        debug {
+            if (hasUnifiedSigning) {
+                signingConfig = signingConfigs.getByName("unified")
+            }
+        }
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasUnifiedSigning) {
+                signingConfigs.getByName("unified")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

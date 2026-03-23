@@ -65,6 +65,16 @@ class _NanochatAppState extends State<NanochatApp> {
 
   Future<void> _bootstrapServices() async {
     try {
+      await Permission.notification.request().timeout(
+        const Duration(seconds: 8),
+      );
+    } on TimeoutException {
+      debugPrint('[Main] Notification permission request timed out');
+    } catch (e) {
+      debugPrint('[Main] Notification permission request failed: $e');
+    }
+
+    try {
       await Permission.ignoreBatteryOptimizations.request().timeout(
         const Duration(seconds: 8),
       );

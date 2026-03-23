@@ -41,44 +41,55 @@ void onStart(ServiceInstance service) async {
   });
 
   socket.on('call:request', (data) async {
-    final callerName = (data['callerName'] ?? 'Unknown') as String;
-    final callerUserId = (data['callerUserId'] ?? '') as String;
-    final isVideo = (data['isVideo'] ?? true) as bool;
-    
-    // Show CallKit
-    final uuid = const Uuid().v4();
-    final callKitParams = CallKitParams(
-      id: uuid,
-      nameCaller: callerName,
-      appName: 'Nanochat',
-      avatar: 'https://i.pravatar.cc/100', // Optional
-      handle: 'Incoming Call',
-      type: isVideo ? 1 : 0, // 0 - Audio, 1 - Video
-      textAccept: 'Accept',
-      textDecline: 'Decline',
-      missedCallNotification: const NotificationParams(
-        showNotification: true,
-        isShowCallback: true,
-        subtitle: 'Missed call',
-        callbackText: 'Call back',
-      ),
-      duration: 30000,
-      extra: <String, dynamic>{'callerUserId': callerUserId, 'isVideo': isVideo},
-      android: const AndroidParams(
-        isCustomNotification: true,
-        isShowLogo: false,
-        ringtonePath: 'system_ringtone_default',
-        backgroundColor: '#0955fa',
-        backgroundUrl: 'assets/test.png',
-        actionColor: '#4CAF50',
-        textColor: '#ffffff',
-        incomingCallNotificationChannelName: 'Incoming Call',
-        missedCallNotificationChannelName: 'Missed Call',
-        isShowFullLockedScreen: true,
-        isImportant: true,
-      ),
-    );
-    await FlutterCallkitIncoming.showCallkitIncoming(callKitParams);
+    try {
+      final callerName = data['callerName']?.toString() ?? 'Unknown';
+      final callerUserId = data['callerUserId']?.toString() ?? '';
+      final isVideoRaw = data['isVideo'];
+      final isVideo =
+          isVideoRaw == true || isVideoRaw?.toString().toLowerCase() == 'true';
+
+      if (callerUserId.isEmpty) return;
+
+      final shouldShow = await LocalStorage.shouldShowIncomingCall(callerUserId);
+      if (!shouldShow) return;
+
+      // Show CallKit
+      final uuid = const Uuid().v4();
+      final callKitParams = CallKitParams(
+        id: uuid,
+        nameCaller: callerName,
+        appName: 'Nanochat',
+        avatar: 'https://i.pravatar.cc/100', // Optional
+        handle: 'Incoming Call',
+        type: isVideo ? 1 : 0, // 0 - Audio, 1 - Video
+        textAccept: 'Accept',
+        textDecline: 'Decline',
+        missedCallNotification: const NotificationParams(
+          showNotification: true,
+          isShowCallback: true,
+          subtitle: 'Missed call',
+          callbackText: 'Call back',
+        ),
+        duration: 30000,
+        extra: <String, dynamic>{'callerUserId': callerUserId, 'isVideo': isVideo},
+        android: const AndroidParams(
+          isCustomNotification: true,
+          isShowLogo: false,
+          ringtonePath: 'system_ringtone_default',
+          backgroundColor: '#0955fa',
+          backgroundUrl: 'assets/test.png',
+          actionColor: '#4CAF50',
+          textColor: '#ffffff',
+          incomingCallNotificationChannelName: 'Incoming Call',
+          missedCallNotificationChannelName: 'Missed Call',
+          isShowFullLockedScreen: true,
+          isImportant: true,
+        ),
+      );
+      await FlutterCallkitIncoming.showCallkitIncoming(callKitParams);
+    } catch (e) {
+      debugPrint('[Background WS] call:request handling failed: $e');
+    }
   });
 
   socket.on('call:end', (data) async {
@@ -93,6 +104,7 @@ void onStart(ServiceInstance service) async {
   // on its own socket. The main app process handles all call signaling via its
   // own SocketProvider so that WebRTC offer/answer/ICE stay on the same connection.
   final callKitSub = FlutterCallkitIncoming.onEvent.listen((event) async {
+    if (event == null) return;
     switch (event!.event) {
       case Event.actionCallAccept:
         // Just bring the app to the foreground. The main app's CallKit listener

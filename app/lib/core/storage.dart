@@ -8,6 +8,8 @@ class LocalStorage {
   static const _keyIsRegistered = 'is_registered';
   static const _keyLastGroupId = 'last_group_id';
     static const _keyAppForeground = 'app_foreground';
+    static const _keyLastIncomingCaller = 'last_incoming_caller';
+    static const _keyLastIncomingAtMs = 'last_incoming_at_ms';
 
   static Future<SharedPreferences> get _prefs =>
       SharedPreferences.getInstance();
@@ -64,6 +66,27 @@ class LocalStorage {
 
   static Future<void> setAppForeground(bool val) async =>
       (await _prefs).setBool(_keyAppForeground, val);
+
+    /// Returns true if an incoming-call UI should be shown for this caller now.
+    /// Prevents duplicate CallKit popups from multiple isolates/sockets.
+    static Future<bool> shouldShowIncomingCall(
+        String callerUserId, {
+        int windowSeconds = 8,
+    }) async {
+        final prefs = await _prefs;
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        final lastCaller = prefs.getString(_keyLastIncomingCaller);
+        final lastAtMs = prefs.getInt(_keyLastIncomingAtMs) ?? 0;
+        final withinWindow = nowMs - lastAtMs < windowSeconds * 1000;
+
+        if (withinWindow && lastCaller == callerUserId) {
+            return false;
+        }
+
+        await prefs.setString(_keyLastIncomingCaller, callerUserId);
+        await prefs.setInt(_keyLastIncomingAtMs, nowMs);
+        return true;
+    }
 
   // Clear all
   static Future<void> clear() async => (await _prefs).clear();

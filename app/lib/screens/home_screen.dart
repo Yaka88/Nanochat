@@ -2,10 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
+import 'package:flutter_callkit_incoming/entities/entities.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../core/api.dart';
 import '../core/auth_provider.dart';
+import '../core/background_service.dart';
 import '../core/permissions.dart';
 import '../core/socket_provider.dart';
 import '../core/storage.dart';
@@ -80,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _callEndedSub?.cancel();
     _forceLogoutSub?.cancel();
 
-    _callRequestSub = socket.onCallRequestStream.listen((data) {
+    _callRequestSub = socket.onCallRequestStream.listen((data) async {
       if (!mounted) return;
       final callerUserId = data['callerUserId']?.toString() ?? '';
       final isVideo = data['isVideo'] == true || data['isVideo'] == 'true';
@@ -96,8 +100,47 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // If this caller already cancelled, don't show incoming dialog
       if (_cancelledCallers.remove(callerUserId)) return;
 
-      // Background incoming UI is handled by BackgroundService.
-      if (_lifecycleState != AppLifecycleState.resumed) return;
+      // Background fallback: if app socket receives call while app is not resumed,
+      // show system incoming UI here as well.
+      if (_lifecycleState != AppLifecycleState.resumed) {
+        final shouldShow = await LocalStorage.shouldShowIncomingCall(callerUserId);
+        if (!shouldShow) return;
+        final callKitParams = CallKitParams(
+          id: const Uuid().v4(),
+          nameCaller: callerName,
+          appName: 'Nanochat',
+          handle: 'Incoming Call',
+          type: isVideo ? 1 : 0,
+          textAccept: 'Accept',
+          textDecline: 'Decline',
+          missedCallNotification: const NotificationParams(
+            showNotification: true,
+            isShowCallback: true,
+            subtitle: 'Missed call',
+            callbackText: 'Call back',
+          ),
+          duration: 30000,
+          extra: <String, dynamic>{
+            'callerUserId': callerUserId,
+            'isVideo': isVideo,
+          },
+          android: const AndroidParams(
+            isCustomNotification: true,
+            isShowLogo: false,
+            ringtonePath: 'system_ringtone_default',
+            backgroundColor: '#0955fa',
+            backgroundUrl: 'assets/test.png',
+            actionColor: '#4CAF50',
+            textColor: '#ffffff',
+            incomingCallNotificationChannelName: 'Incoming Call',
+            missedCallNotificationChannelName: 'Missed Call',
+            isShowFullLockedScreen: true,
+            isImportant: true,
+          ),
+        );
+        await FlutterCallkitIncoming.showCallkitIncoming(callKitParams);
+        return;
+      }
 
       if (_incomingDialogOpen) return;
 
@@ -196,6 +239,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         // doesn't race with API data.
         _loadMembers();
       });
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      // Keep background socket alive for incoming call signaling.
+      unawaited(BackgroundServiceManager.ensureStarted());
     }
   }
 
