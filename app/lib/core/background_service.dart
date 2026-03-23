@@ -88,18 +88,26 @@ void onStart(ServiceInstance service) async {
     await FlutterCallkitIncoming.endAllCalls();
   });
 
-  // Handle Callkit actions in background
+  // Handle Callkit actions in background.
+  // IMPORTANT: The background service must NOT emit call:accept or call:reject
+  // on its own socket. The main app process handles all call signaling via its
+  // own SocketProvider so that WebRTC offer/answer/ICE stay on the same connection.
   final callKitSub = FlutterCallkitIncoming.onEvent.listen((event) async {
     switch (event!.event) {
       case Event.actionCallAccept:
-        final callerUserId = event.body['extra']['callerUserId'];
+        // Just bring the app to the foreground. The main app's CallKit listener
+        // in main.dart will navigate to CallScreen, which emits call:accept on
+        // the main SocketProvider and handles all WebRTC signaling.
         await CallkitForeground.tryBringToForeground();
-        socket.emit('call:accept', {'targetUserId': callerUserId});
-        await FlutterCallkitIncoming.endAllCalls();
         break;
       case Event.actionCallDecline:
-        final callerUserId = event.body['extra']['callerUserId'];
-        socket.emit('call:reject', {'targetUserId': callerUserId});
+        // Notify the caller via the background socket that we declined.
+        // This is safe because decline doesn't need WebRTC signaling.
+        final extra = event.body['extra'];
+        final callerUserId = extra is Map ? extra['callerUserId'] : null;
+        if (callerUserId != null) {
+          socket.emit('call:reject', {'targetUserId': callerUserId});
+        }
         break;
       default:
         break;

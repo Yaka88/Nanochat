@@ -422,7 +422,10 @@ export function setupWebSocket(io: Server) {
             const targetSockets = connectedUsers.get(targetUserId);
             if (targetSockets) {
                 for (const target of targetSockets.values()) {
-                    target.socket.emit('call:accept', { fromUserId: userId });
+                    target.socket.emit('call:accept', { 
+                        fromUserId: userId,
+                        fromSocketId: socket.id 
+                    });
                 }
             }
 
@@ -473,42 +476,50 @@ export function setupWebSocket(io: Server) {
         // WebRTC Signaling
         // ========================================
 
+        // Helper to route signaling to either a specific socket or all of a user's sockets
+        const routeSignalToTarget = (targetUserId: string, targetSocketId: string | undefined, event: string, payload: any) => {
+            const targetSockets = connectedUsers.get(targetUserId);
+            if (!targetSockets) return;
+            
+            if (targetSocketId && targetSockets.has(targetSocketId)) {
+                // Route explicitly to the socket that accepted/initiated the call
+                targetSockets.get(targetSocketId)!.socket.emit(event, payload);
+            } else {
+                // Fallback: broadcast to all sockets for this user
+                for (const target of targetSockets.values()) {
+                    target.socket.emit(event, payload);
+                }
+            }
+        };
+
         // SDP Offer
-        socket.on('signal:offer', async (data: { targetUserId: string; sdp?: string; type?: string }) => {
+        socket.on('signal:offer', async (data: { targetUserId: string; targetSocketId?: string; sdp?: string; type?: string }) => {
             const targetUserId = await ensureAuthorizedTarget(data?.targetUserId, 'signal');
             if (!targetUserId) return;
 
-            const targetSockets = connectedUsers.get(targetUserId);
-            if (targetSockets) {
-                for (const target of targetSockets.values()) {
-                    target.socket.emit('signal:offer', {
-                        fromUserId: userId,
-                        sdp: data.sdp,
-                        type: data.type || 'offer',
-                    });
-                }
-            }
+            routeSignalToTarget(targetUserId, data.targetSocketId, 'signal:offer', {
+                fromUserId: userId,
+                fromSocketId: socket.id, // Identify where this offer came from
+                sdp: data.sdp,
+                type: data.type || 'offer',
+            });
         });
 
         // SDP Answer
-        socket.on('signal:answer', async (data: { targetUserId: string; sdp?: string; type?: string }) => {
+        socket.on('signal:answer', async (data: { targetUserId: string; targetSocketId?: string; sdp?: string; type?: string }) => {
             const targetUserId = await ensureAuthorizedTarget(data?.targetUserId, 'signal');
             if (!targetUserId) return;
 
-            const targetSockets = connectedUsers.get(targetUserId);
-            if (targetSockets) {
-                for (const target of targetSockets.values()) {
-                    target.socket.emit('signal:answer', {
-                        fromUserId: userId,
-                        sdp: data.sdp,
-                        type: data.type || 'answer',
-                    });
-                }
-            }
+            routeSignalToTarget(targetUserId, data.targetSocketId, 'signal:answer', {
+                fromUserId: userId,
+                fromSocketId: socket.id,
+                sdp: data.sdp,
+                type: data.type || 'answer',
+            });
         });
 
         // ICE Candidate
-        socket.on('signal:ice', async (data: { targetUserId: string; candidate: RTCIceCandidateInit }) => {
+        socket.on('signal:ice', async (data: { targetUserId: string; targetSocketId?: string; candidate: RTCIceCandidateInit }) => {
             const targetUserId = await ensureAuthorizedTarget(data?.targetUserId, 'signal');
             if (!targetUserId) return;
 
@@ -517,12 +528,11 @@ export function setupWebSocket(io: Server) {
                 return;
             }
 
-            const targetSockets = connectedUsers.get(targetUserId);
-            if (targetSockets) {
-                for (const target of targetSockets.values()) {
-                    target.socket.emit('signal:ice', { fromUserId: userId, candidate: data.candidate });
-                }
-            }
+            routeSignalToTarget(targetUserId, data.targetSocketId, 'signal:ice', { 
+                fromUserId: userId, 
+                fromSocketId: socket.id,
+                candidate: data.candidate 
+            });
         });
 
         // ========================================

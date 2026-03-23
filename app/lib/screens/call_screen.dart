@@ -46,6 +46,7 @@ class _CallScreenState extends State<CallScreen> {
   final List<RTCIceCandidate> _pendingRemoteCandidates = [];
   bool _remoteDescriptionSet = false;
   late final SocketProvider _socketProvider;
+  String? _targetSocketId;
 
   StreamSubscription<dynamic>? _callAcceptedSub;
   StreamSubscription<dynamic>? _callRejectedSub;
@@ -133,6 +134,7 @@ class _CallScreenState extends State<CallScreen> {
     _pc!.onIceCandidate = (candidate) {
       _socketProvider.emit('signal:ice', {
         'targetUserId': widget.targetUserId,
+        if (_targetSocketId != null) 'targetSocketId': _targetSocketId,
         'candidate': candidate.toMap(),
       });
     };
@@ -168,6 +170,8 @@ class _CallScreenState extends State<CallScreen> {
 
     _callAcceptedSub = _socketProvider.onCallAcceptedStream.listen((data) {
       if (data['fromUserId']?.toString() != widget.targetUserId) return;
+      // Store the specific socket ID of the answering device
+      _targetSocketId = data['fromSocketId']?.toString();
       _accepted = true;
       _outgoingTimeoutTimer?.cancel();
       _createOffer();
@@ -192,6 +196,9 @@ class _CallScreenState extends State<CallScreen> {
     _signalOfferSub = _socketProvider.onSignalOfferStream.listen((data) async {
       if (data['fromUserId']?.toString() != widget.targetUserId) return;
       if (_cleaned || _pc == null) return;
+      // Store the specific socket ID of the offering caller
+      _targetSocketId = data['fromSocketId']?.toString();
+      
       await _setRemoteDescriptionAndFlush(
         RTCSessionDescription(data['sdp'], data['type']),
       );
@@ -202,6 +209,7 @@ class _CallScreenState extends State<CallScreen> {
       await _pc!.setLocalDescription(answer);
       _socketProvider.emit('signal:answer', {
         'targetUserId': data['fromUserId'] ?? widget.targetUserId,
+        if (_targetSocketId != null) 'targetSocketId': _targetSocketId,
         'sdp': answer.sdp,
         'type': answer.type,
       });
