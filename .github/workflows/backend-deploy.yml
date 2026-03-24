@@ -24,10 +24,12 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           script: |
             cd /home/yaka/Nanochat
+            git checkout -- .
             git sparse-checkout init
             git sparse-checkout set "server"
             git config pull.rebase false
             git pull origin main
             cd server
+            sudo systemctl restart docker
             sudo docker compose build api
             sudo docker compose up -d api
