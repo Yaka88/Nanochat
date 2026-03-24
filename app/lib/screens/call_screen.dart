@@ -65,14 +65,22 @@ class _CallScreenState extends State<CallScreen> {
 
   Future<void> _init() async {
     try {
+      // Brief delay to let app lifecycle settle after coming from background.
+      // This prevents racing with HomeScreen.didChangeAppLifecycleState.
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      debugPrint('[CallScreen] _init: isConnected=${_socketProvider.isConnected}, isIncoming=${widget.isIncoming}');
+      
       var ready = await _socketProvider.ensureConnected();
       if (!ready) {
+        debugPrint('[CallScreen] Socket not ready, forcing reconnect...');
         await _socketProvider.reconnect();
         ready = await _socketProvider.ensureConnected(timeout: const Duration(seconds: 25));
       }
       if (!ready) {
         throw Exception('signaling connection unavailable');
       }
+      debugPrint('[CallScreen] Socket connected, proceeding with call setup');
 
       await _localRenderer.initialize();
       await _remoteRenderer.initialize();

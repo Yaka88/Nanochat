@@ -111,7 +111,12 @@ class _NanochatAppState extends State<NanochatApp> {
       if (event == null) return;
 
       if (event.event == Event.actionCallAccept) {
+        debugPrint('[Main] CallKit actionCallAccept received');
         await CallkitForeground.tryBringToForeground();
+
+        // Wait for the app to fully resume and widget tree to be ready.
+        // On some devices, coming from deep background can take significant time.
+        await Future.delayed(const Duration(milliseconds: 500));
 
         final body = event.body as Map<dynamic, dynamic>;
         final extra = body['extra'] as Map<dynamic, dynamic>? ?? {};
@@ -119,9 +124,22 @@ class _NanochatAppState extends State<NanochatApp> {
         final isVideo = extra['isVideo'] == true || extra['isVideo'] == 'true';
         final callerName = body['nameCaller']?.toString() ?? 'Unknown';
 
-        // Avoid pushing a duplicate CallScreen if one is already displayed
-        final nav = navigatorKey.currentState;
-        if (nav == null) return;
+        if (callerUserId.isEmpty) {
+          debugPrint('[Main] CallKit accept: callerUserId is empty, aborting');
+          return;
+        }
+
+        // Wait for navigator to become available (retry up to 5 seconds)
+        NavigatorState? nav;
+        for (var i = 0; i < 20; i++) {
+          nav = navigatorKey.currentState;
+          if (nav != null) break;
+          await Future.delayed(const Duration(milliseconds: 250));
+        }
+        if (nav == null) {
+          debugPrint('[Main] CallKit accept: navigator not available after 5s, aborting');
+          return;
+        }
 
         // Check if the current route is already a CallScreen
         bool isOnCallScreen = false;
@@ -131,8 +149,12 @@ class _NanochatAppState extends State<NanochatApp> {
           }
           return true; // don't actually pop
         });
-        if (isOnCallScreen) return;
+        if (isOnCallScreen) {
+          debugPrint('[Main] CallKit accept: already on call screen, skipping');
+          return;
+        }
 
+        debugPrint('[Main] CallKit accept: navigating to /call for $callerUserId');
         nav.pushNamed('/call', arguments: {
           'userId': callerUserId,
           'name': callerName,
