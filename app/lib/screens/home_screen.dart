@@ -9,7 +9,6 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../core/api.dart';
 import '../core/auth_provider.dart';
-import '../core/background_service.dart';
 import '../core/permissions.dart';
 import '../core/socket_provider.dart';
 import '../core/storage.dart';
@@ -240,10 +239,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         socket.refreshGroups();
         _loadMembers();
       });
-    } else if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive) {
-      // Keep background foreground-service alive so the process isn't killed.
-      unawaited(BackgroundServiceManager.ensureStarted());
     }
   }
 

@@ -5,7 +5,6 @@ import 'app/routes.dart';
 import 'core/auth_provider.dart';
 import 'core/socket_provider.dart';
 import 'core/l10n.dart';
-import 'core/background_service.dart';
 import 'core/callkit_foreground.dart';
 import 'core/push_service.dart';
 import 'screens/home_screen.dart';
@@ -84,15 +83,6 @@ class _NanochatAppState extends State<NanochatApp> {
       debugPrint('[Main] Battery optimization permission failed: $e');
     }
 
-    try {
-      await BackgroundServiceManager.initialize().timeout(
-        const Duration(seconds: 10),
-      );
-    } on TimeoutException {
-      debugPrint('[Main] Background service init timed out');
-    } catch (e) {
-      debugPrint('[Main] Background service init failed: $e');
-    }
 
     // Initialize push notification service (FCM token registration)
     if (widget.firebaseReady) {

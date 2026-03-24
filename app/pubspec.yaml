@@ -33,7 +33,6 @@ dependencies:
   path_provider: ^2.1.2
   image_picker: ^1.1.2
   flutter_ringtone_player: ^4.0.0+4
-  flutter_background_service: ^5.1.0
   flutter_callkit_incoming: ^3.0.0
   flutter_local_notifications: ^21.0.0
   # Firebase (push notifications for incoming calls)
