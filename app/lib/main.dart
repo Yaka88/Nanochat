@@ -55,12 +55,36 @@ class NanochatApp extends StatefulWidget {
   State<NanochatApp> createState() => _NanochatAppState();
 }
 
-class _NanochatAppState extends State<NanochatApp> {
+class _NanochatAppState extends State<NanochatApp> with WidgetsBindingObserver {
+  AppLifecycleState? _lifecycleState;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _lifecycleState = WidgetsBinding.instance.lifecycleState;
     _setupCallKitListener();
     unawaited(_bootstrapServices());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _lifecycleState = state;
+  }
+
+  Future<void> _waitForResumed({Duration timeout = const Duration(seconds: 8)}) async {
+    if (_lifecycleState == AppLifecycleState.resumed) return;
+    final started = DateTime.now();
+    while (DateTime.now().difference(started) < timeout) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      if (_lifecycleState == AppLifecycleState.resumed) return;
+    }
   }
 
   Future<void> _bootstrapServices() async {
@@ -108,6 +132,7 @@ class _NanochatAppState extends State<NanochatApp> {
         // Wait for the app to fully resume and widget tree to be ready.
         // On some devices, coming from deep background can take significant time.
         await Future.delayed(const Duration(milliseconds: 500));
+        await _waitForResumed();
 
         final bodyRaw = event.body;
         final body = bodyRaw is Map ? bodyRaw : const <dynamic, dynamic>{};
@@ -168,7 +193,12 @@ class _NanochatAppState extends State<NanochatApp> {
           final ctx = navigatorKey.currentContext;
           if (ctx != null) {
             final socket = ctx.read<SocketProvider>();
-            await socket.ensureConnected(timeout: const Duration(seconds: 12));
+            var ok = await socket.ensureConnected(timeout: const Duration(seconds: 12));
+            if (!ok) {
+              await socket.reconnect();
+              ok = await socket.ensureConnected(timeout: const Duration(seconds: 15));
+            }
+            debugPrint('[Main] CallKit accept: socket ready=$ok');
           }
         } catch (e) {
           debugPrint('[Main] CallKit accept: ensureConnected failed: $e');

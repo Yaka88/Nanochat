@@ -43,6 +43,9 @@ class _CallScreenState extends State<CallScreen> {
   bool _offerCreated = false;
   bool _accepted = false;
   Timer? _outgoingTimeoutTimer;
+  Timer? _incomingAcceptRetryTimer;
+  Timer? _incomingOfferTimeoutTimer;
+  bool _incomingOfferReceived = false;
   final List<RTCIceCandidate> _pendingRemoteCandidates = [];
   bool _remoteDescriptionSet = false;
   late final SocketProvider _socketProvider;
@@ -200,6 +203,9 @@ class _CallScreenState extends State<CallScreen> {
     _signalOfferSub = _socketProvider.onSignalOfferStream.listen((data) async {
       if (data['fromUserId']?.toString() != widget.targetUserId) return;
       if (_cleaned || _pc == null) return;
+      _incomingOfferReceived = true;
+      _incomingAcceptRetryTimer?.cancel();
+      _incomingOfferTimeoutTimer?.cancel();
       // Store the specific socket ID of the offering caller
       _targetSocketId = data['fromSocketId']?.toString();
       
@@ -236,9 +242,8 @@ class _CallScreenState extends State<CallScreen> {
     } else {
       // Incoming: now that media & peer connection are ready, tell the
       // caller we are ready so they can create the offer.
-      _socketProvider.emit('call:accept', {
-        'targetUserId': widget.targetUserId,
-      });
+      _emitCallAccept();
+      _startIncomingAcceptRecovery();
     }
 
       if (!mounted) return;
@@ -254,6 +259,46 @@ class _CallScreenState extends State<CallScreen> {
       }
       _finishCall(localHangup: !widget.isIncoming);
     }
+  }
+
+  void _emitCallAccept() {
+    _socketProvider.emit('call:accept', {
+      'targetUserId': widget.targetUserId,
+    });
+  }
+
+  void _startIncomingAcceptRecovery() {
+    _incomingAcceptRetryTimer?.cancel();
+    _incomingOfferTimeoutTimer?.cancel();
+
+    var attempts = 0;
+    _incomingAcceptRetryTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
+      if (_cleaned || _connected || _incomingOfferReceived) {
+        timer.cancel();
+        return;
+      }
+
+      attempts++;
+      if (attempts > 5) {
+        timer.cancel();
+        return;
+      }
+
+      // Re-announce accept in case the first signal was lost during background resume.
+      _emitCallAccept();
+      if (!_socketProvider.isConnected) {
+        await _socketProvider.ensureConnected(timeout: const Duration(seconds: 6));
+      }
+      debugPrint('[CallScreen] Incoming accept retry #$attempts');
+    });
+
+    _incomingOfferTimeoutTimer = Timer(const Duration(seconds: 18), () {
+      if (!mounted || _cleaned || _connected || _incomingOfferReceived) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('接听失败，正在重试连接')),
+      );
+      _finishCall(localHangup: false);
+    });
   }
 
   Future<void> _setRemoteDescriptionAndFlush(RTCSessionDescription desc) async {
@@ -357,6 +402,8 @@ class _CallScreenState extends State<CallScreen> {
     if (_cleaned) return;
     _cleaned = true;
     _outgoingTimeoutTimer?.cancel();
+    _incomingAcceptRetryTimer?.cancel();
+    _incomingOfferTimeoutTimer?.cancel();
     _callAcceptedSub?.cancel();
     _callRejectedSub?.cancel();
     _callEndedSub?.cancel();
