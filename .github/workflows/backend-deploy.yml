@@ -22,7 +22,9 @@ jobs:
           host: vps.bluelaser.cn
           username: yaka
           password: ${{ secrets.SERVER_PASSWORD }}
+          script_stop: true
           script: |
+            set -e
             cd /home/yaka/Nanochat
             git checkout -- .
             git sparse-checkout init
