@@ -10,6 +10,8 @@ class LocalStorage {
     static const _keyAppForeground = 'app_foreground';
     static const _keyLastIncomingCaller = 'last_incoming_caller';
     static const _keyLastIncomingAtMs = 'last_incoming_at_ms';
+    static const _keyLastIncomingCallerName = 'last_incoming_caller_name';
+    static const _keyLastIncomingIsVideo = 'last_incoming_is_video';
 
   static Future<SharedPreferences> get _prefs =>
       SharedPreferences.getInstance();
@@ -86,6 +88,50 @@ class LocalStorage {
         await prefs.setString(_keyLastIncomingCaller, callerUserId);
         await prefs.setInt(_keyLastIncomingAtMs, nowMs);
         return true;
+    }
+
+    /// Persist minimal incoming-call payload so accept callbacks that miss
+    /// `extra` can still recover target info after app is restored from background.
+    static Future<void> saveIncomingCallSnapshot({
+        required String callerUserId,
+        required String callerName,
+        required bool isVideo,
+    }) async {
+        final prefs = await _prefs;
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        await prefs.setString(_keyLastIncomingCaller, callerUserId);
+        await prefs.setString(_keyLastIncomingCallerName, callerName);
+        await prefs.setBool(_keyLastIncomingIsVideo, isVideo);
+        await prefs.setInt(_keyLastIncomingAtMs, nowMs);
+    }
+
+    /// Read recent incoming-call payload, returns null when stale.
+    static Future<Map<String, dynamic>?> readRecentIncomingCallSnapshot({
+        int maxAgeSeconds = 90,
+    }) async {
+        final prefs = await _prefs;
+        final callerUserId = prefs.getString(_keyLastIncomingCaller);
+        final callerName = prefs.getString(_keyLastIncomingCallerName);
+        final isVideo = prefs.getBool(_keyLastIncomingIsVideo);
+        final atMs = prefs.getInt(_keyLastIncomingAtMs) ?? 0;
+        if (callerUserId == null || callerUserId.isEmpty) return null;
+
+        final ageMs = DateTime.now().millisecondsSinceEpoch - atMs;
+        if (ageMs > maxAgeSeconds * 1000) return null;
+
+        return {
+            'callerUserId': callerUserId,
+            'callerName': callerName ?? 'Unknown',
+            'isVideo': isVideo ?? false,
+        };
+    }
+
+    static Future<void> clearIncomingCallSnapshot() async {
+        final prefs = await _prefs;
+        await prefs.remove(_keyLastIncomingCaller);
+        await prefs.remove(_keyLastIncomingCallerName);
+        await prefs.remove(_keyLastIncomingIsVideo);
+        await prefs.remove(_keyLastIncomingAtMs);
     }
 
   // Clear all

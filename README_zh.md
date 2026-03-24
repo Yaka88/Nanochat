@@ -42,7 +42,7 @@ Nanochat 采用现代、稳健的移动端架构：
 2. 配置 `server/` 目录下的 `.env` 文件。
 3. 在 `server/` 目录下运行 `npm install` 和 `npx prisma migrate dev`。
 4. 在 `app/` 目录下运行 `flutter pub get`。
-5. 使用提供的 Docker Compose 配置文件进行部署。
+5. 使用 `server/` 目录下的 Docker Compose 配置文件进行部署。
 
 ## 📄 授权说明
 本项目为私人家庭用途。

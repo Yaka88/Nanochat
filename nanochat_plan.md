@@ -185,33 +185,248 @@ App 启动
 │                                                          │
 └──────────────────────────────────────────────────────────┘
 
-每行布局 (从左到右): 大头像 | 昵称 + 在线状态 | 视频按钮 ## 🔧 技术栈与架构演进 (v1.2)
+每行布局 (从左到右): 大头像 | 昵称 + 在线状态 | 视频按钮 | 语音按钮 | 短信按钮
+一页最多显示 6 个成员（可滚动）
+```
+
+### 按钮状态说明
+
+| 成员状态 | 视频通话按钮 | 语音通话按钮 | 短信按钮 |
+|----------|-------------|-------------|-------------|  |
+| ● 在线 | ✅ 可点击 (蓝色) | ✅ 可点击 (绿色) | ✅ 可点击 (蓝色) |
+| ○ 离线 | ❌ 禁用 (灰色) | ❌ 禁用 (灰色) | ✅ 可点击 (蓝色) |
+
+---
+
+## 🗄️ 数据库模型设计
+
+### 设计原则
+
+1. **users 表统一管理所有用户** - Host 和 Member 都在同一张表
+2. **Host 有密码，Member 无密码** - Member 通过 user_id 直接登录
+3. **group_members 表只存关联关系** - 简化为连接表
+4. **全局配置统一管理** - membercount/groupcount 是系统级配置
+
+### 表结构
+
+```sql
+-- 用户表 (所有用户: Host 和 Member)
+CREATE TABLE users (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email           VARCHAR(255) UNIQUE,       -- Host 必填，Member 可为空
+    password_hash   VARCHAR(255),              -- Host 必填，Member 为空
+    email_verified  BOOLEAN DEFAULT FALSE,     -- Host 需验证
+    nickname        VARCHAR(50) NOT NULL,      -- 用户昵称（全局）
+    avatar_url      VARCHAR(255),
+    is_registered   BOOLEAN DEFAULT FALSE,     -- true=Host注册用户, false=Member扫码用户
+    device_id       VARCHAR(255),              -- 设备ID (Member 登录用，绑定该设备)
+    last_group_id   UUID,                      -- 上次访问的家庭，下次自动进入
+    is_online       BOOLEAN DEFAULT FALSE,
+    device_token    VARCHAR(255),              -- 推送通知用
+    created_at      TIMESTAMP DEFAULT NOW(),
+    last_online_at  TIMESTAMP
+);
+
+-- 家庭群组表
+CREATE TABLE groups (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name            VARCHAR(50) DEFAULT 'Home',
+    creator_id      UUID REFERENCES users(id), -- 创建者
+    invite_code     VARCHAR(32) UNIQUE,        -- 邀请码（用于生成二维码）
+    invite_expires_at TIMESTAMP,               -- 邀请码过期时间（24小时）
+    created_at      TIMESTAMP DEFAULT NOW()
+);
+
+-- 群组成员关联表 (简化版)
+CREATE TABLE group_members (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_id        UUID REFERENCES groups(id) ON DELETE CASCADE,
+    user_id         UUID REFERENCES users(id) ON DELETE CASCADE,
+    name_in_group   VARCHAR(50) NOT NULL,      -- 在该家庭中的称呼（如"妈妈"）
+    joined_at       TIMESTAMP DEFAULT NOW(),
+    UNIQUE(group_id, user_id)                  -- 一个用户在一个群组只能有一条记录
+);
+
+-- 语音消息表
+CREATE TABLE voice_messages (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    group_id        UUID REFERENCES groups(id),
+    sender_id       UUID REFERENCES users(id),
+    receiver_id     UUID REFERENCES users(id),
+    audio_url       VARCHAR(255) NOT NULL,
+    duration_seconds INTEGER,
+    is_read         BOOLEAN DEFAULT FALSE,
+    created_at      TIMESTAMP DEFAULT NOW()
+);
+
+-- 系统配置表 (全局参数)
+CREATE TABLE system_config (
+    key             VARCHAR(50) PRIMARY KEY,
+    value           VARCHAR(255) NOT NULL,
+    description     VARCHAR(255)
+);
+
+-- 管理员表
+CREATE TABLE admins (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    username        VARCHAR(50) UNIQUE NOT NULL,
+    password_hash   VARCHAR(255) NOT NULL,
+    created_at      TIMESTAMP DEFAULT NOW()
+);
+
+-- 默认全局配置
+INSERT INTO system_config (key, value, description) VALUES
+('membercount', '6', '每个家庭最大成员数'),
+('groupcount', '6', '每个账号最大可加入/创建的家庭数'),
+('voice_msg_max_seconds', '60', '语音消息最长秒数');
+```
+
+### 实体关系图
+
+```
+┌─────────────────┐         ┌─────────────────┐
+│     users       │         │     groups      │
+│─────────────────│         │─────────────────│
+│ id (PK)         │◄────────│ creator_id      │
+│ email (可空)    │         │ id (PK)         │
+│ password (可空) │         │ name            │
+│ nickname        │         │ invite_code     │
+│ is_registered   │         └────────┬────────┘
+│ last_group_id   │──────────────────┘
+│ is_online       │
+└────────┬────────┘
+         │
+         │ 1:N
+         ▼
+┌─────────────────────────────┐
+│      group_members          │
+│─────────────────────────────│
+│ id (PK)                     │
+│ group_id (FK → groups)      │
+│ user_id (FK → users)        │
+│ name_in_group (家庭称呼)     │
+│ joined_at                   │
+└─────────────────────────────┘
+
+┌─────────────────────────────┐
+│      system_config          │
+│─────────────────────────────│
+│ key (PK)     │ value        │
+│──────────────┼──────────────│
+│ membercount  │ 6            │  ← 全局配置
+│ groupcount   │ 6            │
+└─────────────────────────────┘
+```
+
+### 用户登录对比
+
+| 用户类型 | email | password_hash | is_registered | device_id | 登录方式 |
+|----------|-------|---------------|---------------|-----------|----------|
+| Host (注册) | ✅ 有 | ✅ 有 | true | ❌ 空 | Email + Password |
+| Member (扫码) | ❌ 空 | ❌ 空 | false | ✅ 有 | User ID + Device ID (本地保存，自动登录) |
+
+---
+
+## 🔧 技术栈
 
 | 层级 | 技术 | 说明 |
 |------|------|------|
-| **移动端架构** | **Single Isolate + FCM** | **重大变更**: 彻底弃用了 `flutter_background_service`。全应用仅保留一个主 Dart 引擎。 |
-| **唤醒机制** | **FCM + CallKit** | 依靠 Firebase 高优推送唤醒，结合原生 CallKit 接听，杜绝后台双进程冲突。 |
 | **前端** | Flutter (Dart) | 一套代码 Android + iOS |
-| **后端** | Node.js + TypeScript | WebRTC 生态成熟 |
-| **实时通信** | WebSocket (socket.io) | 单一 Socket 连接，具备 `ensureConnected` 自愈能力。 |
-| **自动化构建** | GitHub Actions | 深度集成正式签名流程 (`KEYSTORE_BASE64` 等 Secrets)。 |
+| **后端** | Node.js + TypeScript + Fastify | WebRTC 生态成熟 |
+| **数据库** | PostgreSQL | 可靠、功能丰富 |
+| **实时通信** | WebSocket (socket.io) | 在线状态 + 信令 |
+| **通话** | WebRTC (flutter_webrtc) | P2P 视频/语音 |
+| **STUN** | 自建 coturn | 国内可用 |
+| **容器** | Docker Compose | 一键部署（不含 Nginx） |
+| **反向代理** | Nginx (系统级) | HTTPS + WebSocket，全局代理 |
+| **邮件服务** | Brevo | 发送验证邮件 |
 
 ---
 
-## 📅 开发与迭代记录
+## 🌐 服务器部署架构
 
-### v1.2 (2026-03-24)
-- **架构重构**: 删除了 `flutter_background_service` 及其配套代码。
-- **Android 优化**: `MainActivity` 开启 `singleTask` 模式，确保接听时精准唤醒主进程。
-- **稳定性修复**: 修复了应用从后台恢复时 Socket 被竞态销毁的问题，采用 `ensureConnected()` 策略。
-- **部署自动化**: GitHub Actions 现已支持完整 release 签名编译。
+### 架构总览
 
----
+> **重要**: Nginx 作为系统级全局反向代理（不在 Docker 内），统一管理所有域名的 HTTPS 和路由。
 
-*文档版本: 1.2*
-*最后更新: 2026-03-24*
-*变更记录: v1.2 - 彻底移除后台常驻引擎，改为单实例架构以解决通话劫持和双进程问题。*
-| 管理后台 |
+### 双域名架构
+
+```
+                     VPS (同一台服务器)
+                           │
+            ┌──────────────┴──────────────┐
+            │      系统级 Nginx            │
+            │   /etc/nginx/sites-enabled/  │
+            └──────────────┬──────────────┘
+                           │
+       ┌───────────────────┴───────────────────┐
+       │                                       │
+ vps.bluelaser.cn                      chat.bluelaser.cn
+       │                                       │
+  ┌────┴────┐                             ┌────┴────┐
+  │         │                             │         │
+ :443      :8443                         :443      :80
+(Nginx)   (VLESS)                       (Nginx)  (→443)
+  │       直连                             │
+  ├─/admin/* → :8080 (3x-ui面板)          └─/* → :3000 (Nanochat Docker)
+  └─/sub → :25500 (SubConverter)              ├─/api/* → API
+                                              ├─/socket.io/* → WebSocket
+                                              ├─/uploads/* → 静态资源
+                                              └─/admin/* → 管理后台
++ :3478/udp → coturn (STUN, Docker)
+```
+
+### 域名与端口分配
+
+| 域名 | 端口 | 服务 |
+|------|------|------|
+| `vps.bluelaser.cn` | 443 | Nginx → 3x-ui 面板 + SubConverter |
+| `vps.bluelaser.cn` | 8443 | VLESS 代理（直连） |
+| `chat.bluelaser.cn` | 443 | Nginx → Nanochat API + 管理后台 |
+| `chat.bluelaser.cn` | 80 | HTTP 重定向到 HTTPS |
+| - | 3478/udp | STUN (coturn) |
+
+### SSL 证书
+
+- **类型**: 泛域名证书 `*.bluelaser.cn`
+- **申请方式**: acme.sh + ZoneEdit DNS 验证
+- **路径**: `/etc/ssl/bluelaser.cn.crt` 和 `.key`
+
+### Nginx 配置（系统级）
+
+> **配置文件统一管理在项目 `nginx/` 目录，通过软链接安装到系统 Nginx。**
+
+| 配置文件 | 用途 |
+|----------|------|
+| `vps.bluelaser.cn.conf` | 3x-ui 面板 + SubConverter |
+| `chat.bluelaser.cn.conf` | Nanochat API + WebSocket + 管理后台 |
+
+```bash
+# 配置文件位置
+/home/yaka/Documents/Nanochat/nginx/
+├── vps.bluelaser.cn.conf    # 3x-ui 面板、SubConverter
+└── chat.bluelaser.cn.conf   # Nanochat 服务
+
+# 安装方式：创建软链接到 sites-enabled
+sudo ln -sf /home/yaka/Documents/Nanochat/nginx/*.conf /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+#### vps.bluelaser.cn 路由规则
+
+| 路径 | 目标服务 | 端口 |
+|------|----------|------|
+| `/admin`, `/admin/*` | 3x-ui 面板 | 8080 |
+| `/sub`, `/convert`, ... | SubConverter | 25500 |
+| `8443 (直连)` | VLESS 代理 | 8443 (不经过 Nginx) |
+
+#### chat.bluelaser.cn 路由规则
+
+| 路径 | 目标服务 | 说明 |
+|------|----------|------|
+| `/api/*` | Node.js 后端 | REST API |
+| `/socket.io/*` | Node.js 后端 | WebSocket (在线状态 + 信令) |
+| `/admin/*` | Node.js 后端 | 管理后台 |
 | `/uploads/*` | Node.js 后端 | 静态资源 (头像、语音消息) |
 
 ### Docker Compose 服务（不含 Nginx）
@@ -454,6 +669,12 @@ nanochat/
 
 ---
 
+### v1.2.1 (2026-03-24)
+- **文档纠偏**: 修正了 Docker 部署路径描述，明确 `docker-compose.yml` 位于 `server/` 目录下。
+- **流程规范**: 遵循用户指令，所有后续操作改为仅本地修改，不再执行自动化 push。
+
+---
+
 ## 🔜 二期预留
 
 以下功能在一期代码中预留接口，二期实现：
@@ -467,6 +688,6 @@ nanochat/
 
 ---
 
-*文档版本: 1.1*
-*最后更新: 2026-01-28*
-*变更记录: v1.1 - Nginx 改为系统级全局代理（不在 Docker 内）*
+*文档版本: 1.2.1*
+*最后更新: 2026-03-24*
+*变更记录: v1.2.1 - 修正 Docker 路径映射，更新部署指南。*

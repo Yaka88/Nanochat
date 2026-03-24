@@ -7,6 +7,7 @@ import 'core/socket_provider.dart';
 import 'core/l10n.dart';
 import 'core/callkit_foreground.dart';
 import 'core/push_service.dart';
+import 'core/storage.dart';
 import 'screens/home_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
@@ -108,11 +109,30 @@ class _NanochatAppState extends State<NanochatApp> {
         // On some devices, coming from deep background can take significant time.
         await Future.delayed(const Duration(milliseconds: 500));
 
-        final body = event.body as Map<dynamic, dynamic>;
-        final extra = body['extra'] as Map<dynamic, dynamic>? ?? {};
-        final callerUserId = extra['callerUserId']?.toString() ?? '';
-        final isVideo = extra['isVideo'] == true || extra['isVideo'] == 'true';
-        final callerName = body['nameCaller']?.toString() ?? 'Unknown';
+        final bodyRaw = event.body;
+        final body = bodyRaw is Map ? bodyRaw : const <dynamic, dynamic>{};
+        final extraRaw = body['extra'];
+        final extra = extraRaw is Map ? extraRaw : const <dynamic, dynamic>{};
+
+        var callerUserId =
+            extra['callerUserId']?.toString() ?? body['callerUserId']?.toString() ?? '';
+        var isVideo = extra['isVideo'] == true ||
+            extra['isVideo'] == 'true' ||
+            body['isVideo'] == true ||
+            body['isVideo'] == 'true';
+        var callerName = body['nameCaller']?.toString() ??
+            extra['callerName']?.toString() ??
+            'Unknown';
+
+        if (callerUserId.isEmpty) {
+          final snap = await LocalStorage.readRecentIncomingCallSnapshot();
+          if (snap != null) {
+            callerUserId = snap['callerUserId']?.toString() ?? '';
+            callerName = snap['callerName']?.toString() ?? callerName;
+            isVideo = snap['isVideo'] == true;
+            debugPrint('[Main] CallKit accept: recovered caller info from local snapshot');
+          }
+        }
 
         if (callerUserId.isEmpty) {
           debugPrint('[Main] CallKit accept: callerUserId is empty, aborting');
@@ -144,6 +164,16 @@ class _NanochatAppState extends State<NanochatApp> {
           return;
         }
 
+        try {
+          final ctx = navigatorKey.currentContext;
+          if (ctx != null) {
+            final socket = ctx.read<SocketProvider>();
+            await socket.ensureConnected(timeout: const Duration(seconds: 12));
+          }
+        } catch (e) {
+          debugPrint('[Main] CallKit accept: ensureConnected failed: $e');
+        }
+
         debugPrint('[Main] CallKit accept: navigating to /call for $callerUserId');
         nav.pushNamed('/call', arguments: {
           'userId': callerUserId,
@@ -151,6 +181,7 @@ class _NanochatAppState extends State<NanochatApp> {
           'isVideo': isVideo,
           'isIncoming': true,
         });
+        await LocalStorage.clearIncomingCallSnapshot();
       }
     });
   }

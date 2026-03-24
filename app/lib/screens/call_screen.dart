@@ -320,6 +320,7 @@ class _CallScreenState extends State<CallScreen> {
     await _pc!.setLocalDescription(offer);
     _socketProvider.emit('signal:offer', {
       'targetUserId': widget.targetUserId,
+      if (_targetSocketId != null) 'targetSocketId': _targetSocketId,
       'sdp': offer.sdp,
       'type': offer.type,
     });

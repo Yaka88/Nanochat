@@ -104,6 +104,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (_lifecycleState != AppLifecycleState.resumed) {
         final shouldShow = await LocalStorage.shouldShowIncomingCall(callerUserId);
         if (!shouldShow) return;
+        await LocalStorage.saveIncomingCallSnapshot(
+          callerUserId: callerUserId,
+          callerName: callerName,
+          isVideo: isVideo,
+        );
         final callKitParams = CallKitParams(
           id: const Uuid().v4(),
           nameCaller: callerName,

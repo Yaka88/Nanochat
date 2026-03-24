@@ -42,5 +42,5 @@ Nanochat uses a robust, modern mobile architecture:
 2. Configure `.env` in the `server/` directory.
 3. Run `npm install` and `npx prisma migrate dev` in the `server/` directory.
 4. Run `flutter pub get` in the `app/` directory.
-5. Deploy using the provided Docker Compose configuration.
+5. Deploy using the provided Docker Compose configuration (located in the `server/` directory).
 

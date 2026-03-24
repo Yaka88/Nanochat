@@ -21,11 +21,17 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 Future<void> _handleCallPush(Map<String, dynamic> data) async {
   if (data['type'] != 'call_incoming') return;
 
-  final callerName = (data['callerName'] ?? 'Unknown') as String;
-  final callerUserId = (data['callerUserId'] ?? '') as String;
-  final isVideo = data['isVideo'] == 'true';
+  final callerName = (data['callerName'] ?? 'Unknown').toString();
+  final callerUserId = (data['callerUserId'] ?? '').toString();
+  final isVideo = data['isVideo'] == true || data['isVideo'] == 'true';
 
   if (callerUserId.isEmpty) return;
+
+  await LocalStorage.saveIncomingCallSnapshot(
+    callerUserId: callerUserId,
+    callerName: callerName,
+    isVideo: isVideo,
+  );
 
   final uuid = const Uuid().v4();
   final callKitParams = CallKitParams(
