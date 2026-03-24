@@ -59,6 +59,24 @@ jobs:
             echo "⚠️ Secret GOOGLE_SERVICES_JSON is not set. Build might fail."
           fi
 
+      - name: Setup Signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/nanochat-signing.jks
+            echo "storePassword=$STORE_PASSWORD" > android/key.properties
+            echo "keyPassword=$KEY_PASSWORD" >> android/key.properties
+            echo "keyAlias=$KEY_ALIAS" >> android/key.properties
+            echo "storeFile=../nanochat-signing.jks" >> android/key.properties
+            echo "✅ Signing configured from secrets"
+          else
+            echo "⚠️ KEYSTORE_BASE64 secret not set. APK will use debug signing."
+          fi
+
       - name: Build APK
         run: |
           flutter build apk --release --target-platform android-arm64 --obfuscate --split-debug-info=build/symbols --tree-shake-icons

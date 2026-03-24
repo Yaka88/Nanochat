@@ -232,9 +232,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     unawaited(LocalStorage.setAppForeground(state == AppLifecycleState.resumed));
     if (state == AppLifecycleState.resumed) {
       final socket = context.read<SocketProvider>();
-      // Reconnect on resume to get a fresh socket + presence snapshot.
-      // The socket may have gone stale during a long background period.
-      socket.reconnect().then((_) {
+      // Use ensureConnected() instead of reconnect().
+      // reconnect() DESTROYS the socket – if the user just accepted a call,
+      // CallScreen._init() would race against socket destruction.
+      // ensureConnected() only connects if the socket is actually dead.
+      socket.ensureConnected().then((_) {
+        socket.refreshGroups();
         _loadMembers();
       });
     } else if (state == AppLifecycleState.paused ||
