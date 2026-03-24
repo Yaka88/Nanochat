@@ -1,5 +1,7 @@
 # Nanochat
 
+[English](README.md) | [中文](README_zh.md)
+
 Nanochat is a minimalist, elder-friendly communication application designed for simple family connectivity. It focuses on high-quality video/audio calls and voice messaging with a streamlined user interface.
 
 ## 🌟 Key Features
@@ -29,6 +31,21 @@ Nanochat uses a robust, modern mobile architecture:
 
 - [中文说明 (Chinese README)](README_zh.md)
 - [Detailed Project Plan](nanochat_plan.md)
+
+## 🔧 Build & Deployment
+
+### Android (CI/CD via GitHub Actions)
+
+- CI builds are triggered automatically on commits/PRs.
+- Required GitHub repository secrets: `GOOGLE_SERVICES_JSON`, `KEYSTORE_BASE64`, `KEY_ALIAS`, `KEY_PASSWORD`, `STORE_PASSWORD`.
+- Artifacts (APKs/AABs) are available in the Actions run page.
+- See `.github/workflows/android-build.yml` for details.
+
+### Server
+
+- Docker & Docker Compose: `cd server && docker compose up -d`
+- For detailed deployment steps, see [server/DEPLOY.md](server/DEPLOY.md).
+
 
 ## 🚀 Getting Started
 

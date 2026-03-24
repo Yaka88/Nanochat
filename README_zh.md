@@ -1,5 +1,7 @@
 # Nanochat (纳聊)
 
+[中文](README_zh.md) | [English](README.md)
+
 Nanochat 是一款专为家中长辈设计的极简通讯应用。它专注于高质量的音视频通话和语音留言，提供最直观、无障碍的交互体验。
 
 ## 🌟 核心功能
@@ -29,6 +31,21 @@ Nanochat 采用现代、稳健的移动端架构：
 
 - [English README (英文说明)](README.md)
 - [项目规划文档 (Detailed Plan)](nanochat_plan.md)
+
+## 🔧 构建与部署
+
+### Android（GitHub Actions CI/CD）
+
+- 提交代码或打开 PR 将自动触发 CI 构建。
+- 需配置 Github 仓库 Secrets：`GOOGLE_SERVICES_JSON`、`KEYSTORE_BASE64`、`KEY_ALIAS`、`KEY_PASSWORD`、`STORE_PASSWORD`。
+- 构建产物（APK/AAB）可从 Actions 页面下载。
+- 详见 `.github/workflows/android-build.yml`。
+
+### 服务器
+
+- Docker & Docker Compose：`cd server && docker compose up -d`
+- 详细部署步骤见 [server/DEPLOY.md](server/DEPLOY.md)。
+
 
 ## 🚀 快速开始
 
