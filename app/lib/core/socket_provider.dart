@@ -70,8 +70,8 @@ class SocketProvider extends ChangeNotifier {
           .setExtraHeaders({'Authorization': 'Bearer $token', 'x-device-id': deviceId})
           .setAuth({'token': token, 'deviceId': deviceId})
           .enableReconnection()
-          .setReconnectionAttempts(10)
-          .setReconnectionDelay(1000)
+          .setReconnectionAttempts(99999)
+          .setReconnectionDelay(3000)
           .enableAutoConnect()
           .build(),
     );

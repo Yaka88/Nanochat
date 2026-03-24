@@ -65,10 +65,6 @@ class _CallScreenState extends State<CallScreen> {
 
   Future<void> _init() async {
     try {
-      // Brief delay to let app lifecycle settle after coming from background.
-      // This prevents racing with HomeScreen.didChangeAppLifecycleState.
-      await Future.delayed(const Duration(milliseconds: 300));
-
       debugPrint('[CallScreen] _init: isConnected=${_socketProvider.isConnected}, isIncoming=${widget.isIncoming}');
       
       var ready = await _socketProvider.ensureConnected();

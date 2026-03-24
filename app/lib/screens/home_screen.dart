@@ -18,7 +18,6 @@ import '../models/group.dart';
 import '../widgets/incoming_call_dialog.dart';
 import '../widgets/member_card.dart';
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
-import '../main.dart' show navigatorKey;
 
 
 class HomeScreen extends StatefulWidget {
@@ -232,33 +231,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _lifecycleState = state;
     unawaited(LocalStorage.setAppForeground(state == AppLifecycleState.resumed));
     if (state == AppLifecycleState.resumed) {
-      // Delay reconnect to let CallKit navigation settle first.
-      // If the user just accepted a call, CallScreen._init() needs the
-      // existing socket – calling reconnect() now would destroy it mid-handshake.
-      Future.delayed(const Duration(seconds: 3), () {
-        if (!mounted) return;
-
-        // If we navigated to /call, skip reconnect – CallScreen owns the socket now.
-        bool onCallScreen = false;
-        final nav = navigatorKey.currentState;
-        if (nav != null) {
-          nav.popUntil((route) {
-            if (route.settings.name == '/call') onCallScreen = true;
-            return true; // don't actually pop
-          });
-        }
-        if (onCallScreen) return;
-
-        final socket = context.read<SocketProvider>();
-        socket.reconnect().then((_) {
-          // Only load members after socket is connected so presence data
-          // doesn't race with API data.
-          _loadMembers();
-        });
+      final socket = context.read<SocketProvider>();
+      // Reconnect on resume to get a fresh socket + presence snapshot.
+      // The socket may have gone stale during a long background period.
+      socket.reconnect().then((_) {
+        _loadMembers();
       });
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      // Keep background socket alive for incoming call signaling.
+      // Keep background foreground-service alive so the process isn't killed.
       unawaited(BackgroundServiceManager.ensureStarted());
     }
   }
