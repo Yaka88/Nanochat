@@ -11,11 +11,32 @@ class SocketProvider extends ChangeNotifier {
   List<Map<String, dynamic>>? _cachedIceServers;
   DateTime? _iceServersCachedAt;
 
+  /// Tracks the last time we received ANY data from the server.
+  /// Used to detect stale sockets that are "connected" in memory but dead on the wire.
+  DateTime _lastSocketActivityAt = DateTime.now();
+  static const _staleThreshold = Duration(seconds: 30);
+
   bool isUserOnline(String userId) => _onlineStatus[userId] ?? !_hasPresenceSnapshot;
 
   /// Ensure there is an active socket connection before call signaling.
-  /// Returns true when connected within timeout, otherwise false.
-  Future<bool> ensureConnected({Duration timeout = const Duration(seconds: 20)}) async {
+  /// 
+  /// [forceIfStale]: if true and the socket hasn't received data recently,
+  /// force a full disconnect+reconnect. This is critical for the background
+  /// call-accept flow, where Android silently kills the TCP connection but
+  /// socket_io_client still reports connected=true.
+  Future<bool> ensureConnected({
+    Duration timeout = const Duration(seconds: 20),
+    bool forceIfStale = false,
+  }) async {
+    // Detect stale socket: appears connected but hasn't received data recently
+    if (forceIfStale && _socket != null && _socket!.connected) {
+      final staleDuration = DateTime.now().difference(_lastSocketActivityAt);
+      if (staleDuration > _staleThreshold) {
+        debugPrint('[WS] Socket appears stale (no activity for ${staleDuration.inSeconds}s), forcing reconnect');
+        disconnect();
+      }
+    }
+
     if (isConnected) return true;
 
     if (_socket == null) {
@@ -78,12 +99,17 @@ class SocketProvider extends ChangeNotifier {
 
     _socket!.onConnect((_) {
       debugPrint('[WS] Connected');
+      _lastSocketActivityAt = DateTime.now();
       // Refresh group rooms on every reconnect so presence stays in sync
       _socket!.emit('groups:refresh');
     });
     _socket!.onDisconnect((_) => debugPrint('[WS] Disconnected'));
+    _socket!.on('pong', (_) {
+      _lastSocketActivityAt = DateTime.now();
+    });
 
     _socket!.on('presence:snapshot', (data) {
+      _lastSocketActivityAt = DateTime.now();
       final ids = (data is Map ? data['onlineUserIds'] : null) as List<dynamic>?;
       if (ids == null) return;
       _hasPresenceSnapshot = true;
@@ -111,26 +137,28 @@ class SocketProvider extends ChangeNotifier {
     });
 
     _socket!.on('user:online', (data) {
+      _lastSocketActivityAt = DateTime.now();
       _onlineStatus[data['userId']] = true;
       notifyListeners();
     });
 
     _socket!.on('user:offline', (data) {
+      _lastSocketActivityAt = DateTime.now();
       _onlineStatus[data['userId']] = false;
       notifyListeners();
     });
 
-    // Call events
-    _socket!.on('call:request', (data) => _onCallRequestCtrl.add(data));
-    _socket!.on('call:accept', (data) => _onCallAcceptedCtrl.add(data));
-    _socket!.on('call:reject', (data) => _onCallRejectedCtrl.add(data));
-    _socket!.on('call:end', (data) => _onCallEndedCtrl.add(data));
-    _socket!.on('call:error', (data) => _onCallErrorCtrl.add(data));
+    // Call events — all also touch _lastSocketActivityAt
+    _socket!.on('call:request', (data) { _lastSocketActivityAt = DateTime.now(); _onCallRequestCtrl.add(data); });
+    _socket!.on('call:accept', (data) { _lastSocketActivityAt = DateTime.now(); _onCallAcceptedCtrl.add(data); });
+    _socket!.on('call:reject', (data) { _lastSocketActivityAt = DateTime.now(); _onCallRejectedCtrl.add(data); });
+    _socket!.on('call:end', (data) { _lastSocketActivityAt = DateTime.now(); _onCallEndedCtrl.add(data); });
+    _socket!.on('call:error', (data) { _lastSocketActivityAt = DateTime.now(); _onCallErrorCtrl.add(data); });
 
     // WebRTC signaling
-    _socket!.on('signal:offer', (data) => _onSignalOfferCtrl.add(data));
-    _socket!.on('signal:answer', (data) => _onSignalAnswerCtrl.add(data));
-    _socket!.on('signal:ice', (data) => _onSignalIceCtrl.add(data));
+    _socket!.on('signal:offer', (data) { _lastSocketActivityAt = DateTime.now(); _onSignalOfferCtrl.add(data); });
+    _socket!.on('signal:answer', (data) { _lastSocketActivityAt = DateTime.now(); _onSignalAnswerCtrl.add(data); });
+    _socket!.on('signal:ice', (data) { _lastSocketActivityAt = DateTime.now(); _onSignalIceCtrl.add(data); });
 
     // Voice message
     _socket!.on('message:new', (data) {

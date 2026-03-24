@@ -193,7 +193,13 @@ class _NanochatAppState extends State<NanochatApp> with WidgetsBindingObserver {
           final ctx = navigatorKey.currentContext;
           if (ctx != null) {
             final socket = ctx.read<SocketProvider>();
-            var ok = await socket.ensureConnected(timeout: const Duration(seconds: 12));
+            // CRITICAL: use forceIfStale to detect dead TCP connections.
+            // When app was in background, Android kills the TCP silently
+            // but socket_io still reports connected=true.
+            var ok = await socket.ensureConnected(
+              timeout: const Duration(seconds: 12),
+              forceIfStale: true,
+            );
             if (!ok) {
               await socket.reconnect();
               ok = await socket.ensureConnected(timeout: const Duration(seconds: 15));

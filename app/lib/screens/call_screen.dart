@@ -70,7 +70,7 @@ class _CallScreenState extends State<CallScreen> {
     try {
       debugPrint('[CallScreen] _init: isConnected=${_socketProvider.isConnected}, isIncoming=${widget.isIncoming}');
       
-      var ready = await _socketProvider.ensureConnected();
+      var ready = await _socketProvider.ensureConnected(forceIfStale: true);
       if (!ready) {
         debugPrint('[CallScreen] Socket not ready, forcing reconnect...');
         await _socketProvider.reconnect();

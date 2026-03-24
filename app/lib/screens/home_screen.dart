@@ -236,11 +236,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     unawaited(LocalStorage.setAppForeground(state == AppLifecycleState.resumed));
     if (state == AppLifecycleState.resumed) {
       final socket = context.read<SocketProvider>();
-      // Use ensureConnected() instead of reconnect().
-      // reconnect() DESTROYS the socket – if the user just accepted a call,
-      // CallScreen._init() would race against socket destruction.
-      // ensureConnected() only connects if the socket is actually dead.
-      socket.ensureConnected().then((_) {
+      // Use ensureConnected(forceIfStale: true) to detect dead TCP connections.
+      // Android silently kills TCP when backgrounded, but socket_io_client
+      // still reports connected=true. forceIfStale checks last activity time.
+      socket.ensureConnected(forceIfStale: true).then((_) {
         socket.refreshGroups();
         _loadMembers();
       });
