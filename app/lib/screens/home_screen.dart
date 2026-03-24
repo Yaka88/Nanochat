@@ -39,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _incomingHandled = false;
   StreamSubscription<dynamic>? _callRequestSub;
   StreamSubscription<dynamic>? _callEndedSub;
+  StreamSubscription<dynamic>? _callAnsweredElsewhereSub;
   StreamSubscription<dynamic>? _forceLogoutSub;
   // Track callers who cancelled before we could show the dialog
   final Set<String> _cancelledCallers = {};
@@ -58,6 +59,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _stopIncomingRing();
     _callRequestSub?.cancel();
     _callEndedSub?.cancel();
+    _callAnsweredElsewhereSub?.cancel();
     _forceLogoutSub?.cancel();
     super.dispose();
   }
@@ -81,6 +83,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final socket = context.read<SocketProvider>();
     _callRequestSub?.cancel();
     _callEndedSub?.cancel();
+    _callAnsweredElsewhereSub?.cancel();
     _forceLogoutSub?.cancel();
 
     _callRequestSub = socket.onCallRequestStream.listen((data) async {
@@ -200,6 +203,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       final fromUserId = data['fromUserId']?.toString();
       if (fromUserId == null) return;
 
+      // Ensure system incoming UI is dismissed for cancelled calls.
+      FlutterCallkitIncoming.endAllCalls();
+      unawaited(LocalStorage.clearIncomingCallSnapshot());
+
       // If the incoming dialog is open for this caller, dismiss it
       if (_incomingDialogOpen && fromUserId == _pendingCallerUserId) {
         _incomingHandled = true;
@@ -219,6 +226,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       Future.delayed(const Duration(seconds: 30), () {
         _cancelledCallers.remove(fromUserId);
       });
+    });
+
+    _callAnsweredElsewhereSub = socket.onCallAnsweredElsewhereStream.listen((_) {
+      _stopIncomingRing();
+      FlutterCallkitIncoming.endAllCalls();
+      unawaited(LocalStorage.clearIncomingCallSnapshot());
+
+      if (_incomingDialogOpen) {
+        _incomingHandled = true;
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+        _incomingDialogOpen = false;
+        _pendingCallerUserId = null;
+      }
     });
 
     _forceLogoutSub = socket.onForceLogoutStream.listen((data) async {

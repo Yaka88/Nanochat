@@ -125,15 +125,7 @@ class _NanochatAppState extends State<NanochatApp> with WidgetsBindingObserver {
     FlutterCallkitIncoming.onEvent.listen((event) async {
       if (event == null) return;
 
-      if (event.event == Event.actionCallAccept) {
-        debugPrint('[Main] CallKit actionCallAccept received');
-        await CallkitForeground.tryBringToForeground();
-
-        // Wait for the app to fully resume and widget tree to be ready.
-        // On some devices, coming from deep background can take significant time.
-        await Future.delayed(const Duration(milliseconds: 500));
-        await _waitForResumed();
-
+      Future<Map<String, dynamic>?> resolveIncomingFromEvent() async {
         final bodyRaw = event.body;
         final body = bodyRaw is Map ? bodyRaw : const <dynamic, dynamic>{};
         final extraRaw = body['extra'];
@@ -155,14 +147,67 @@ class _NanochatAppState extends State<NanochatApp> with WidgetsBindingObserver {
             callerUserId = snap['callerUserId']?.toString() ?? '';
             callerName = snap['callerName']?.toString() ?? callerName;
             isVideo = snap['isVideo'] == true;
-            debugPrint('[Main] CallKit accept: recovered caller info from local snapshot');
+            debugPrint('[Main] CallKit event: recovered caller info from local snapshot');
           }
         }
 
         if (callerUserId.isEmpty) {
+          return null;
+        }
+
+        return {
+          'callerUserId': callerUserId,
+          'callerName': callerName,
+          'isVideo': isVideo,
+        };
+      }
+
+      Future<void> rejectIncomingFromEvent() async {
+        final incoming = await resolveIncomingFromEvent();
+        if (incoming == null) {
+          await LocalStorage.clearIncomingCallSnapshot();
+          return;
+        }
+
+        try {
+          final ctx = navigatorKey.currentContext;
+          if (ctx != null) {
+            final socket = ctx.read<SocketProvider>();
+            final ready = await socket.ensureConnected(
+              timeout: const Duration(seconds: 8),
+              forceIfStale: true,
+            );
+            if (ready) {
+              socket.emit('call:reject', {
+                'targetUserId': incoming['callerUserId'],
+                'reason': 'declined',
+              });
+            }
+          }
+        } catch (e) {
+          debugPrint('[Main] CallKit decline handling failed: $e');
+        } finally {
+          await LocalStorage.clearIncomingCallSnapshot();
+        }
+      }
+
+      if (event.event == Event.actionCallAccept) {
+        debugPrint('[Main] CallKit actionCallAccept received');
+        await CallkitForeground.tryBringToForeground();
+
+        // Wait for the app to fully resume and widget tree to be ready.
+        // On some devices, coming from deep background can take significant time.
+        await Future.delayed(const Duration(milliseconds: 500));
+        await _waitForResumed();
+
+        final incoming = await resolveIncomingFromEvent();
+        if (incoming == null) {
           debugPrint('[Main] CallKit accept: callerUserId is empty, aborting');
           return;
         }
+        final callerUserId = incoming['callerUserId'] as String;
+        final callerName = incoming['callerName'] as String;
+        final isVideo = incoming['isVideo'] == true;
 
         // Wait for navigator to become available (retry up to 5 seconds)
         NavigatorState? nav;
@@ -218,6 +263,11 @@ class _NanochatAppState extends State<NanochatApp> with WidgetsBindingObserver {
           'isIncoming': true,
         });
         await LocalStorage.clearIncomingCallSnapshot();
+      } else if (event.event == Event.actionCallDecline ||
+          event.event == Event.actionCallEnded ||
+          event.event == Event.actionCallTimeout) {
+        debugPrint('[Main] CallKit incoming dismissed: ${event.event}');
+        await rejectIncomingFromEvent();
       }
     });
   }

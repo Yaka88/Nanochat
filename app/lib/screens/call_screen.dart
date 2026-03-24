@@ -175,13 +175,34 @@ class _CallScreenState extends State<CallScreen> {
       await _pc!.addCandidate(candidate);
     });
 
-    _callAcceptedSub = _socketProvider.onCallAcceptedStream.listen((data) {
+    _callAcceptedSub = _socketProvider.onCallAcceptedStream.listen((data) async {
       if (data['fromUserId']?.toString() != widget.targetUserId) return;
+      final nextSocketId = data['fromSocketId']?.toString();
+      final targetChanged = nextSocketId != null && nextSocketId != _targetSocketId;
+
       // Store the specific socket ID of the answering device
-      _targetSocketId = data['fromSocketId']?.toString();
+      _targetSocketId = nextSocketId;
       _accepted = true;
       _outgoingTimeoutTimer?.cancel();
-      _createOffer();
+
+      if (!_offerCreated) {
+        _createOffer();
+        return;
+      }
+
+      // If the callee reconnected and now answers from a new socket,
+      // re-send the same local offer to the updated target socket.
+      if (targetChanged) {
+        final local = await _pc?.getLocalDescription();
+        if (local != null && local.sdp != null) {
+          _socketProvider.emit('signal:offer', {
+            'targetUserId': widget.targetUserId,
+            if (_targetSocketId != null) 'targetSocketId': _targetSocketId,
+            'sdp': local.sdp,
+            'type': local.type,
+          });
+        }
+      }
     });
     _callRejectedSub = _socketProvider.onCallRejectedStream.listen((data) {
       if (data['fromUserId']?.toString() != widget.targetUserId) return;

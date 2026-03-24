@@ -153,6 +153,7 @@ class SocketProvider extends ChangeNotifier {
     _socket!.on('call:accept', (data) { _lastSocketActivityAt = DateTime.now(); _onCallAcceptedCtrl.add(data); });
     _socket!.on('call:reject', (data) { _lastSocketActivityAt = DateTime.now(); _onCallRejectedCtrl.add(data); });
     _socket!.on('call:end', (data) { _lastSocketActivityAt = DateTime.now(); _onCallEndedCtrl.add(data); });
+    _socket!.on('call:answered_elsewhere', (data) { _lastSocketActivityAt = DateTime.now(); _onCallAnsweredElsewhereCtrl.add(data); });
     _socket!.on('call:error', (data) { _lastSocketActivityAt = DateTime.now(); _onCallErrorCtrl.add(data); });
 
     // WebRTC signaling
@@ -281,6 +282,7 @@ class SocketProvider extends ChangeNotifier {
   final _onCallAcceptedCtrl = StreamController<dynamic>.broadcast();
   final _onCallRejectedCtrl = StreamController<dynamic>.broadcast();
   final _onCallEndedCtrl = StreamController<dynamic>.broadcast();
+  final _onCallAnsweredElsewhereCtrl = StreamController<dynamic>.broadcast();
   final _onCallErrorCtrl = StreamController<dynamic>.broadcast();
   final _onSignalOfferCtrl = StreamController<dynamic>.broadcast();
   final _onSignalAnswerCtrl = StreamController<dynamic>.broadcast();
@@ -292,6 +294,7 @@ class SocketProvider extends ChangeNotifier {
   Stream<dynamic> get onCallAcceptedStream => _onCallAcceptedCtrl.stream;
   Stream<dynamic> get onCallRejectedStream => _onCallRejectedCtrl.stream;
   Stream<dynamic> get onCallEndedStream => _onCallEndedCtrl.stream;
+  Stream<dynamic> get onCallAnsweredElsewhereStream => _onCallAnsweredElsewhereCtrl.stream;
   Stream<dynamic> get onCallErrorStream => _onCallErrorCtrl.stream;
   Stream<dynamic> get onSignalOfferStream => _onSignalOfferCtrl.stream;
   Stream<dynamic> get onSignalAnswerStream => _onSignalAnswerCtrl.stream;
@@ -328,6 +331,7 @@ class SocketProvider extends ChangeNotifier {
     _onCallAcceptedCtrl.close();
     _onCallRejectedCtrl.close();
     _onCallEndedCtrl.close();
+    _onCallAnsweredElsewhereCtrl.close();
     _onCallErrorCtrl.close();
     _onSignalOfferCtrl.close();
     _onSignalAnswerCtrl.close();
