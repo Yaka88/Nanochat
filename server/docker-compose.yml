@@ -44,6 +44,16 @@ services:
     volumes:
       - ./turnserver.conf:/etc/coturn/turnserver.conf
 
+  ollama:
+    image: ollama/ollama:0.20.1-rc2
+    container_name: nanochat-ollama
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
 volumes:
   postgres_data:
   uploads_data:
+  ollama_data:
